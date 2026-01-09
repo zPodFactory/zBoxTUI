@@ -1,0 +1,142 @@
+/* zBoxTUI - ESXi DCUI Theme */
+/* Colors: gray (#5a5a5a), yellow (#ffd700), black, white */
+
+/* Base app styling */
+Screen {
+    background: #5a5a5a;
+    scrollbar-background: #5a5a5a;
+    scrollbar-color: #888888;
+}
+
+/* Modal screens should have black background to dim underlying content */
+ModalScreen {
+    background: black;
+}
+
+/* Remove default focus styling */
+*:focus {
+    border: none;
+}
+
+Static:focus {
+    text-style: none;
+}
+
+/* Override default scrollbar colors */
+App {
+    scrollbar-background: #5a5a5a;
+    scrollbar-color: #888888;
+}
+
+Vertical {
+    scrollbar-background: #5a5a5a;
+    scrollbar-color: #888888;
+}
+
+Horizontal {
+    scrollbar-background: #5a5a5a;
+    scrollbar-color: #888888;
+}
+
+*:focus-within {
+    border: none;
+}
+
+/* Menu screen - vertical split layout */
+#menu-screen {
+    layout: vertical;
+    width: 100%;
+    height: 100%;
+}
+
+#menu-header {
+    layout: horizontal;
+    background: #5a5a5a;
+    color: white;
+    height: 1;
+}
+
+#menu-header-left {
+    width: 1fr;
+    padding: 0 1;
+}
+
+#menu-header-right {
+    width: 1fr;
+    padding: 0 1;
+}
+
+#menu-body {
+    layout: horizontal;
+    background: #ffd700;
+    color: black;
+    height: 1fr;
+}
+
+#menu-list {
+    width: 1fr;
+    padding: 1 2;
+    background: #ffd700;
+    color: black;
+}
+
+#menu-detail {
+    width: 1fr;
+    padding: 1 2;
+    background: #5a5a5a;
+    color: white;
+}
+
+#menu-footer {
+    layout: horizontal;
+    background: #5a5a5a;
+    color: white;
+    height: 1;
+}
+
+#menu-footer-left {
+    width: 1fr;
+    padding: 0 1;
+}
+
+#menu-footer-center {
+    width: 2fr;
+    padding: 0 1;
+    text-align: center;
+}
+
+#menu-footer-right {
+    width: 1fr;
+    padding: 0 1;
+    text-align: right;
+}
+
+/* DCUI Menu widget */
+DCUIMenu {
+    background: #ffd700;
+    color: black;
+    width: 100%;
+    height: auto;
+}
+
+DCUIMenu > .menu-item {
+    padding: 0 1;
+    background: #ffd700;
+    color: black;
+}
+
+DCUIMenu > .menu-item.--selected {
+    background: #5a5a5a;
+    color: white;
+}
+
+/* Modal dialogs - overlay styling handled in widget DEFAULT_CSS */
+
+/* Footer key hints */
+.key-hint {
+    color: white;
+}
+
+.key-name {
+    color: #ffd700;
+}
