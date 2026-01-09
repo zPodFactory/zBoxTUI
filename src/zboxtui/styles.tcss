@@ -13,13 +13,26 @@ ModalScreen {
     background: black;
 }
 
-/* Remove default focus styling */
-*:focus {
+/* Remove default focus styling - but not for dialog sections */
+Static:focus {
+    text-style: none;
     border: none;
 }
 
-Static:focus {
-    text-style: none;
+Container:focus {
+    border: none;
+}
+
+Vertical:focus {
+    border: none;
+}
+
+Horizontal:focus {
+    border: none;
+}
+
+Input:focus {
+    border: none;
 }
 
 /* Override default scrollbar colors */
@@ -36,10 +49,6 @@ Vertical {
 Horizontal {
     scrollbar-background: #5a5a5a;
     scrollbar-color: #888888;
-}
-
-*:focus-within {
-    border: none;
 }
 
 /* Menu screen - vertical split layout */
