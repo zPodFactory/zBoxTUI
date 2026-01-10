@@ -125,7 +125,7 @@ class MenuScreen(Screen):
         width: 1fr;
         background: #5a5a5a;
         color: white;
-        padding: 1 2;
+        padding: 1 2 0 2;
         border-right: solid white;
         border-bottom: solid white;
     }
