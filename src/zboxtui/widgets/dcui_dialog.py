@@ -181,6 +181,164 @@ class LoginDialog(ModalScreen[tuple[str, str] | None]):
         self.dismiss(None)
 
 
+class PasswordDialog(ModalScreen[bool]):
+    """A DCUI-style dialog for changing the root password."""
+
+    app: ZBoxTUI
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel", show=False),
+    ]
+
+    DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="PasswordDialog", width=60) + """
+    PasswordDialog .form-row {
+        height: 3;
+        width: 100%;
+    }
+
+    PasswordDialog .form-label {
+        width: 20;
+        color: black;
+        height: 3;
+        content-align: left middle;
+    }
+
+    PasswordDialog .form-input {
+        width: 1fr;
+        background: #3a3a3a;
+        color: white;
+        border: none;
+        height: 3;
+    }
+
+    PasswordDialog .form-input:focus {
+        background: #4a4a4a;
+    }
+
+    PasswordDialog #error-message {
+        color: #8b0000;
+        height: 1;
+        text-align: center;
+    }
+
+    PasswordDialog #success-message {
+        color: #006400;
+        height: 1;
+        text-align: center;
+    }
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+    ) -> None:
+        super().__init__(name=name, id=id, classes=classes)
+
+    def compose(self) -> ComposeResult:
+        with Container(id="dialog-outer"):
+            with Vertical(id="dialog-header"):
+                yield Static("")  # Spacer before title
+                yield Static("Configure Root Password", id="dialog-title")
+                yield Static("")  # Spacer after title
+                yield Static(
+                    "Enter a new password for the root account.",
+                    id="dialog-subtitle",
+                )
+                yield Static("")  # Spacer after subtitle
+            with Vertical(id="dialog-body"):
+                with Horizontal(classes="form-row"):
+                    yield Static("New Password:", classes="form-label")
+                    yield Input(
+                        password=True,
+                        placeholder="Enter new password",
+                        classes="form-input",
+                        id="password-input",
+                    )
+                with Horizontal(classes="form-row"):
+                    yield Static("Confirm Password:", classes="form-label")
+                    yield Input(
+                        password=True,
+                        placeholder="Confirm new password",
+                        classes="form-input",
+                        id="confirm-input",
+                    )
+                yield Static("", id="error-message")
+                yield Static("")  # Spacer before footer
+                yield Static("<Enter> Apply    <Esc> Cancel", id="dialog-footer")
+
+    def on_mount(self) -> None:
+        """Focus the password input on mount and take debug screenshot."""
+        self.query_one("#password-input", Input).focus()
+        self.app.save_debug_screenshot("password_dialog")
+
+    @on(Input.Submitted)
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle Enter key in input fields."""
+        if event.input.id == "password-input":
+            # Move to confirm field
+            self.query_one("#confirm-input", Input).focus()
+        elif event.input.id == "confirm-input":
+            # Submit the form
+            self._submit()
+
+    def _submit(self) -> None:
+        """Validate and apply the password change."""
+        password = self.query_one("#password-input", Input).value
+        confirm = self.query_one("#confirm-input", Input).value
+        error_msg = self.query_one("#error-message", Static)
+
+        # Validate passwords
+        if not password:
+            error_msg.update("Error: Password cannot be empty")
+            self.query_one("#password-input", Input).focus()
+            return
+
+        if password != confirm:
+            error_msg.update("Error: Passwords do not match")
+            self.query_one("#confirm-input", Input).value = ""
+            self.query_one("#confirm-input", Input).focus()
+            return
+
+        if len(password) < 4:
+            error_msg.update("Error: Password must be at least 4 characters")
+            return
+
+        # Apply the password change
+        try:
+            result = subprocess.run(
+                ["chpasswd"],
+                input=f"root:{password}\n",
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                error_msg.update("")
+                # Show success and close
+                self.app.push_screen(
+                    MessageDialog(
+                        "Password Changed",
+                        "Root password has been successfully updated.",
+                    ),
+                    callback=lambda _: self.dismiss(True),
+                )
+            else:
+                error_msg.update(f"Error: {result.stderr.strip() or 'Failed to change password'}")
+        except subprocess.TimeoutExpired:
+            error_msg.update("Error: Password change timed out")
+        except FileNotFoundError:
+            error_msg.update("Error: chpasswd command not found")
+        except Exception as e:
+            error_msg.update(f"Error: {e}")
+
+    def action_cancel(self) -> None:
+        """Cancel the dialog."""
+        self.dismiss(False)
+
+
 class MessageDialog(ModalScreen[bool]):
     """A simple message dialog with OK/Cancel."""
 

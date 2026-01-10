@@ -11,6 +11,7 @@ from .widgets.dcui_dialog import (
     LoginDialog,
     MessageDialog,
     NetworkTestDialog,
+    PasswordDialog,
     SystemLogsDialog,
     TestDialog,
     ZBoxLogsDialog,
@@ -115,13 +116,7 @@ class ZBoxTUI(App):
 
     def _show_password_dialog(self) -> None:
         """Show password configuration dialog."""
-        self.push_screen(
-            MessageDialog(
-                "Configure Password",
-                "Password configuration will be implemented here.\n\n"
-                "This will allow changing the root password.",
-            ),
-        )
+        self.push_screen(PasswordDialog())
 
     def _show_network_dialog(self) -> None:
         """Show network configuration dialog."""
