@@ -93,14 +93,14 @@ class LoginDialog(ModalScreen[tuple[str, str] | None]):
 
     DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="LoginDialog", width=60) + """
     LoginDialog .form-row {
-        height: 3;
+        height: 1;
         width: 100%;
     }
 
     LoginDialog .form-label {
         width: 15;
         color: black;
-        height: 3;
+        height: 1;
         content-align: left middle;
     }
 
@@ -109,7 +109,7 @@ class LoginDialog(ModalScreen[tuple[str, str] | None]):
         background: #3a3a3a;
         color: white;
         border: none;
-        height: 3;
+        height: 1;
     }
 
     LoginDialog .form-input:focus {
@@ -196,14 +196,14 @@ class PasswordDialog(ModalScreen[bool]):
 
     DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="PasswordDialog", width=60) + """
     PasswordDialog .form-row {
-        height: 3;
+        height: 1;
         width: 100%;
     }
 
     PasswordDialog .form-label {
         width: 20;
         color: black;
-        height: 3;
+        height: 1;
         content-align: left middle;
     }
 
@@ -212,7 +212,7 @@ class PasswordDialog(ModalScreen[bool]):
         background: #3a3a3a;
         color: white;
         border: none;
-        height: 3;
+        height: 1;
     }
 
     PasswordDialog .form-input:focus {
