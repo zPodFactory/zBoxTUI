@@ -91,7 +91,7 @@ class LoginDialog(ModalScreen[tuple[str, str] | None]):
         Binding("escape", "cancel", "Cancel", show=False),
     ]
 
-    DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="LoginDialog", width=60) + """
+    DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="LoginDialog", width=45) + """
     LoginDialog .form-row {
         height: 1;
         width: 100%;
@@ -194,7 +194,7 @@ class PasswordDialog(ModalScreen[bool]):
         Binding("escape", "cancel", "Cancel", show=False),
     ]
 
-    DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="PasswordDialog", width=60) + """
+    DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="PasswordDialog", width=45) + """
     PasswordDialog .form-row {
         height: 1;
         width: 100%;
