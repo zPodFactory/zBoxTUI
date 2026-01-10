@@ -8,6 +8,7 @@ from .screens.dashboard import DashboardScreen
 from .screens.menu import MenuScreen
 from .utils.system import get_system_info
 from .widgets.dcui_dialog import (
+    KeyboardDialog,
     LoginDialog,
     MessageDialog,
     NetworkTestDialog,
@@ -148,13 +149,7 @@ class ZBoxTUI(App):
 
     def _show_keyboard_dialog(self) -> None:
         """Show keyboard configuration dialog."""
-        self.push_screen(
-            MessageDialog(
-                "Configure Keyboard",
-                "Keyboard configuration will be implemented here.\n\n"
-                "This will allow changing the keyboard layout.",
-            ),
-        )
+        self.push_screen(KeyboardDialog())
 
     def _show_packages_dialog(self) -> None:
         """Show package management dialog."""

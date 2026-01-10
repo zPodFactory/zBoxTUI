@@ -339,6 +339,271 @@ class PasswordDialog(ModalScreen[bool]):
         self.dismiss(False)
 
 
+def get_available_keymaps() -> list[str]:
+    """Get list of available keyboard keymaps.
+
+    Returns:
+        List of keymap names.
+    """
+    try:
+        result = subprocess.run(
+            ["localectl", "list-keymaps"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().split("\n")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    # Fallback: try to list keymaps from /usr/share/keymaps
+    try:
+        result = subprocess.run(
+            ["find", "/usr/share/keymaps", "-name", "*.map.gz", "-type", "f"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            keymaps = []
+            for line in result.stdout.strip().split("\n"):
+                # Extract keymap name from path
+                name = line.split("/")[-1].replace(".map.gz", "")
+                keymaps.append(name)
+            return sorted(set(keymaps))
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    return ["us", "uk", "de", "fr", "es", "it", "pt", "ru", "jp"]
+
+
+def get_current_keymap() -> str:
+    """Get the current keyboard keymap.
+
+    Returns:
+        Current keymap name or 'unknown'.
+    """
+    try:
+        result = subprocess.run(
+            ["localectl", "status"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.split("\n"):
+                if "VC Keymap:" in line:
+                    return line.split(":")[-1].strip() or "us"
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return "unknown"
+
+
+class KeyboardDialog(ModalScreen[bool]):
+    """A dialog for configuring the keyboard keymap."""
+
+    app: ZBoxTUI
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel", show=False),
+        Binding("enter", "apply", "Apply", show=False),
+    ]
+
+    DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="KeyboardDialog", width=70) + """
+    KeyboardDialog #dialog-outer {
+        height: 80%;
+    }
+
+    KeyboardDialog #dialog-body {
+        height: 1fr;
+        overflow: hidden;
+    }
+
+    KeyboardDialog #keymap-list {
+        height: 1fr;
+        background: #3a3a3a;
+        color: white;
+        border: none;
+        padding: 0 1;
+    }
+
+    KeyboardDialog #keymap-list:focus {
+        background: #3a3a3a;
+    }
+
+    KeyboardDialog #keymap-list > .option-list--option-highlighted {
+        background: #5a5a5a;
+        color: #ffd700;
+    }
+
+    KeyboardDialog #status-row {
+        height: 1;
+        margin-top: 1;
+    }
+
+    KeyboardDialog #status-label {
+        width: 20;
+        color: black;
+    }
+
+    KeyboardDialog #status-value {
+        width: 1fr;
+        color: black;
+    }
+
+    KeyboardDialog #status-value.--success {
+        color: #006400;
+    }
+
+    KeyboardDialog #status-value.--failure {
+        color: #8b0000;
+    }
+
+    KeyboardDialog #status-value.--pending {
+        color: #555555;
+    }
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+    ) -> None:
+        super().__init__(name=name, id=id, classes=classes)
+        self._keymaps: list[str] = []
+        self._current_keymap = get_current_keymap()
+
+    def compose(self) -> ComposeResult:
+        from textual.widgets import OptionList
+
+        self._keymaps = get_available_keymaps()
+
+        with Container(id="dialog-outer"):
+            with Vertical(id="dialog-header"):
+                yield Static("")  # Spacer before title
+                yield Static("Configure Keyboard", id="dialog-title")
+                yield Static("")  # Spacer after title
+                yield Static(
+                    f"Current keymap: {self._current_keymap}",
+                    id="dialog-subtitle",
+                )
+                yield Static("")  # Spacer after subtitle
+            with Vertical(id="dialog-body"):
+                yield OptionList(*self._keymaps, id="keymap-list")
+                with Horizontal(id="status-row"):
+                    yield Static("Status:", id="status-label")
+                    yield Static("Select a keymap and press Enter", id="status-value")
+                yield Static("")  # Spacer before footer
+                yield Static("<↑/↓> Select    <Enter> Apply    <Esc> Cancel", id="dialog-footer")
+
+    def on_mount(self) -> None:
+        """Focus the keymap list and select current keymap."""
+        from textual.widgets import OptionList
+
+        self.app.save_debug_screenshot("keyboard_dialog")
+        keymap_list = self.query_one("#keymap-list", OptionList)
+        keymap_list.focus()
+
+        # Try to highlight the current keymap
+        if self._current_keymap in self._keymaps:
+            idx = self._keymaps.index(self._current_keymap)
+            keymap_list.highlighted = idx
+
+    def action_apply(self) -> None:
+        """Apply the selected keymap."""
+        from textual.widgets import OptionList
+
+        keymap_list = self.query_one("#keymap-list", OptionList)
+        if keymap_list.highlighted is not None:
+            selected_keymap = self._keymaps[keymap_list.highlighted]
+            self._apply_keymap(selected_keymap)
+
+    @work(exclusive=True)
+    async def _apply_keymap(self, keymap: str) -> None:
+        """Apply the keyboard keymap."""
+        status = self.query_one("#status-value", Static)
+        status.remove_class("--success", "--failure")
+        status.add_class("--pending")
+        status.update(f"Applying keymap '{keymap}'...")
+
+        # Small delay to show the pending status
+        await asyncio.sleep(0.5)
+
+        try:
+            # Try localectl first (persistent)
+            proc = await asyncio.create_subprocess_exec(
+                "localectl", "set-keymap", keymap,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+
+            if proc.returncode == 0:
+                # Also apply immediately with loadkeys for current TTY
+                try:
+                    load_proc = await asyncio.create_subprocess_exec(
+                        "loadkeys", keymap,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    await asyncio.wait_for(load_proc.communicate(), timeout=5)
+                except Exception:
+                    pass  # loadkeys failure is not critical
+
+                status.remove_class("--pending")
+                status.add_class("--success")
+                status.update(f"Keymap '{keymap}' applied successfully")
+
+                # Update subtitle
+                subtitle = self.query_one("#dialog-subtitle", Static)
+                subtitle.update(f"Current keymap: {keymap}")
+                self._current_keymap = keymap
+            else:
+                error = stderr.decode().strip() if stderr else "Unknown error"
+                status.remove_class("--pending")
+                status.add_class("--failure")
+                status.update(f"Failed: {error}")
+
+        except TimeoutError:
+            status.remove_class("--pending")
+            status.add_class("--failure")
+            status.update("Failed: Operation timed out")
+        except FileNotFoundError:
+            # Try loadkeys as fallback
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "loadkeys", keymap,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+
+                if proc.returncode == 0:
+                    status.remove_class("--pending")
+                    status.add_class("--success")
+                    status.update(f"Keymap '{keymap}' applied (session only)")
+                else:
+                    error = stderr.decode().strip() if stderr else "Unknown error"
+                    status.remove_class("--pending")
+                    status.add_class("--failure")
+                    status.update(f"Failed: {error}")
+            except Exception as e:
+                status.remove_class("--pending")
+                status.add_class("--failure")
+                status.update(f"Failed: {e}")
+        except Exception as e:
+            status.remove_class("--pending")
+            status.add_class("--failure")
+            status.update(f"Failed: {e}")
+
+    def action_cancel(self) -> None:
+        """Cancel the dialog."""
+        self.dismiss(False)
+
+
 class MessageDialog(ModalScreen[bool]):
     """A simple message dialog with OK/Cancel."""
 
