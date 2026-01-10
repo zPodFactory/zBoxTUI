@@ -14,8 +14,12 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Static
 
+from ..utils.logging import get_logger
+
 if TYPE_CHECKING:
     from ..app import ZBoxTUI
+
+log = get_logger("dialogs")
 
 
 # Common CSS for all DCUI dialogs - ESXi DCUI style
@@ -292,21 +296,25 @@ class PasswordDialog(ModalScreen[bool]):
 
         # Validate passwords
         if not password:
+            log.warning("Password change failed: empty password")
             error_msg.update("Error: Password cannot be empty")
             self.query_one("#password-input", Input).focus()
             return
 
         if password != confirm:
+            log.warning("Password change failed: passwords do not match")
             error_msg.update("Error: Passwords do not match")
             self.query_one("#confirm-input", Input).value = ""
             self.query_one("#confirm-input", Input).focus()
             return
 
         if len(password) < 4:
+            log.warning("Password change failed: password too short")
             error_msg.update("Error: Password must be at least 4 characters")
             return
 
         # Apply the password change
+        log.info("Attempting to change root password via chpasswd")
         try:
             result = subprocess.run(
                 ["chpasswd"],
@@ -315,7 +323,11 @@ class PasswordDialog(ModalScreen[bool]):
                 text=True,
                 timeout=10,
             )
+            log.debug(
+                "chpasswd returned: returncode=%d, stderr=%r", result.returncode, result.stderr
+            )
             if result.returncode == 0:
+                log.info("Root password changed successfully")
                 error_msg.update("")
                 # Show success and close
                 self.app.push_screen(
@@ -326,12 +338,16 @@ class PasswordDialog(ModalScreen[bool]):
                     callback=lambda _: self.dismiss(True),
                 )
             else:
+                log.error("chpasswd failed: %s", result.stderr.strip() or "Unknown error")
                 error_msg.update(f"Error: {result.stderr.strip() or 'Failed to change password'}")
         except subprocess.TimeoutExpired:
+            log.error("chpasswd timed out")
             error_msg.update("Error: Password change timed out")
         except FileNotFoundError:
+            log.error("chpasswd command not found")
             error_msg.update("Error: chpasswd command not found")
         except Exception as e:
+            log.exception("Unexpected error changing password: %s", e)
             error_msg.update(f"Error: {e}")
 
     def action_cancel(self) -> None:
@@ -345,6 +361,7 @@ def get_available_keymaps() -> list[str]:
     Returns:
         List of keymap names.
     """
+    log.debug("Fetching available keymaps via 'localectl list-keymaps'")
     try:
         result = subprocess.run(
             ["localectl", "list-keymaps"],
@@ -352,12 +369,18 @@ def get_available_keymaps() -> list[str]:
             text=True,
             timeout=10,
         )
+        log.debug("localectl list-keymaps: returncode=%d", result.returncode)
         if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip().split("\n")
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+            keymaps = result.stdout.strip().split("\n")
+            log.info("Found %d keymaps via localectl", len(keymaps))
+            return keymaps
+    except subprocess.TimeoutExpired:
+        log.warning("localectl list-keymaps timed out")
+    except FileNotFoundError:
+        log.warning("localectl command not found")
 
     # Fallback: try to list keymaps from /usr/share/keymaps
+    log.debug("Fallback: searching /usr/share/keymaps for keymap files")
     try:
         result = subprocess.run(
             ["find", "/usr/share/keymaps", "-name", "*.map.gz", "-type", "f"],
@@ -365,16 +388,22 @@ def get_available_keymaps() -> list[str]:
             text=True,
             timeout=10,
         )
+        log.debug("find keymaps: returncode=%d", result.returncode)
         if result.returncode == 0 and result.stdout.strip():
             keymaps = []
             for line in result.stdout.strip().split("\n"):
                 # Extract keymap name from path
                 name = line.split("/")[-1].replace(".map.gz", "")
                 keymaps.append(name)
-            return sorted(set(keymaps))
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+            keymaps = sorted(set(keymaps))
+            log.info("Found %d keymaps via filesystem search", len(keymaps))
+            return keymaps
+    except subprocess.TimeoutExpired:
+        log.warning("find keymaps timed out")
+    except FileNotFoundError:
+        log.warning("find command not found")
 
+    log.warning("Using fallback keymap list")
     return ["us", "uk", "de", "fr", "es", "it", "pt", "ru", "jp"]
 
 
@@ -384,6 +413,7 @@ def get_current_keymap() -> str:
     Returns:
         Current keymap name or 'unknown'.
     """
+    log.debug("Fetching current keymap via 'localectl status'")
     try:
         result = subprocess.run(
             ["localectl", "status"],
@@ -391,12 +421,18 @@ def get_current_keymap() -> str:
             text=True,
             timeout=10,
         )
+        log.debug("localectl status: returncode=%d", result.returncode)
         if result.returncode == 0:
             for line in result.stdout.split("\n"):
                 if "VC Keymap:" in line:
-                    return line.split(":")[-1].strip() or "us"
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+                    keymap = line.split(":")[-1].strip() or "us"
+                    log.info("Current keymap: %s", keymap)
+                    return keymap
+    except subprocess.TimeoutExpired:
+        log.warning("localectl status timed out")
+    except FileNotFoundError:
+        log.warning("localectl command not found")
+    log.warning("Could not determine current keymap")
     return "unknown"
 
 
@@ -524,6 +560,7 @@ class KeyboardDialog(ModalScreen[bool]):
     @work(exclusive=True)
     async def _apply_keymap(self, keymap: str) -> None:
         """Apply the keyboard keymap."""
+        log.info("Applying keymap: %s", keymap)
         status = self.query_one("#status-value", Static)
         status.remove_class("--success", "--failure")
         status.add_class("--pending")
@@ -534,25 +571,30 @@ class KeyboardDialog(ModalScreen[bool]):
 
         try:
             # Try localectl first (persistent)
+            log.debug("Running: localectl set-keymap %s", keymap)
             proc = await asyncio.create_subprocess_exec(
                 "localectl", "set-keymap", keymap,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
             _, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+            log.debug("localectl set-keymap: returncode=%d", proc.returncode)
 
             if proc.returncode == 0:
                 # Also apply immediately with loadkeys for current TTY
+                log.debug("Running: loadkeys %s (for immediate effect)", keymap)
                 try:
                     load_proc = await asyncio.create_subprocess_exec(
                         "loadkeys", keymap,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                     )
-                    await asyncio.wait_for(load_proc.communicate(), timeout=5)
-                except Exception:
-                    pass  # loadkeys failure is not critical
+                    _, load_stderr = await asyncio.wait_for(load_proc.communicate(), timeout=5)
+                    log.debug("loadkeys: returncode=%d", load_proc.returncode)
+                except Exception as e:
+                    log.debug("loadkeys failed (non-critical): %s", e)
 
+                log.info("Keymap '%s' applied successfully", keymap)
                 status.remove_class("--pending")
                 status.add_class("--success")
                 status.update(f"Keymap '{keymap}' applied successfully")
@@ -563,38 +605,47 @@ class KeyboardDialog(ModalScreen[bool]):
                 self._current_keymap = keymap
             else:
                 error = stderr.decode().strip() if stderr else "Unknown error"
+                log.error("localectl set-keymap failed: %s", error)
                 status.remove_class("--pending")
                 status.add_class("--failure")
                 status.update(f"Failed: {error}")
 
         except TimeoutError:
+            log.error("localectl set-keymap timed out")
             status.remove_class("--pending")
             status.add_class("--failure")
             status.update("Failed: Operation timed out")
         except FileNotFoundError:
+            log.warning("localectl not found, trying loadkeys as fallback")
             # Try loadkeys as fallback
             try:
+                log.debug("Running: loadkeys %s (fallback)", keymap)
                 proc = await asyncio.create_subprocess_exec(
                     "loadkeys", keymap,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
                 _, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+                log.debug("loadkeys: returncode=%d", proc.returncode)
 
                 if proc.returncode == 0:
+                    log.info("Keymap '%s' applied via loadkeys (session only)", keymap)
                     status.remove_class("--pending")
                     status.add_class("--success")
                     status.update(f"Keymap '{keymap}' applied (session only)")
                 else:
                     error = stderr.decode().strip() if stderr else "Unknown error"
+                    log.error("loadkeys failed: %s", error)
                     status.remove_class("--pending")
                     status.add_class("--failure")
                     status.update(f"Failed: {error}")
             except Exception as e:
+                log.exception("loadkeys fallback failed: %s", e)
                 status.remove_class("--pending")
                 status.add_class("--failure")
                 status.update(f"Failed: {e}")
         except Exception as e:
+            log.exception("Unexpected error applying keymap: %s", e)
             status.remove_class("--pending")
             status.add_class("--failure")
             status.update(f"Failed: {e}")
@@ -662,6 +713,7 @@ class MessageDialog(ModalScreen[bool]):
 
 def get_default_gateway() -> str | None:
     """Get the default gateway IP address."""
+    log.debug("Fetching default gateway via 'ip route show default'")
     try:
         result = subprocess.run(
             ["ip", "route", "show", "default"],
@@ -669,18 +721,25 @@ def get_default_gateway() -> str | None:
             text=True,
             timeout=5,
         )
+        log.debug("ip route show default: returncode=%d", result.returncode)
         if result.returncode == 0:
             # Parse "default via X.X.X.X dev ..."
             match = re.search(r"default via (\d+\.\d+\.\d+\.\d+)", result.stdout)
             if match:
-                return match.group(1)
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+                gateway = match.group(1)
+                log.info("Default gateway: %s", gateway)
+                return gateway
+        log.warning("No default gateway found in route output")
+    except subprocess.TimeoutExpired:
+        log.warning("ip route show default timed out")
+    except FileNotFoundError:
+        log.warning("ip command not found")
     return None
 
 
 async def ping_host(host: str, count: int = 3) -> tuple[bool, str]:
     """Ping a host and return (success, message)."""
+    log.debug("Pinging host: %s (count=%d)", host, count)
     try:
         proc = await asyncio.create_subprocess_exec(
             "ping",
@@ -694,21 +753,28 @@ async def ping_host(host: str, count: int = 3) -> tuple[bool, str]:
         )
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
         output = stdout.decode()
+        log.debug("ping %s: returncode=%d", host, proc.returncode)
 
         if proc.returncode == 0:
             # Extract average latency from ping output
             match = re.search(r"rtt min/avg/max/mdev = [\d.]+/([\d.]+)/", output)
             if match:
                 avg_ms = match.group(1)
+                log.info("Ping %s: OK (%s ms)", host, avg_ms)
                 return True, f"OK ({avg_ms} ms)"
+            log.info("Ping %s: OK", host)
             return True, "OK"
         else:
+            log.warning("Ping %s: No response", host)
             return False, "Failed - No response"
     except TimeoutError:
+        log.warning("Ping %s: Timeout", host)
         return False, "Failed - Timeout"
     except FileNotFoundError:
+        log.error("ping command not found")
         return False, "Failed - ping not found"
     except Exception as e:
+        log.exception("Ping %s failed: %s", host, e)
         return False, f"Failed - {e}"
 
 
@@ -945,6 +1011,7 @@ def get_system_logs(lines: int = 100) -> list[str]:
         List of log lines.
     """
     # Try journalctl first (modern systemd systems)
+    log.debug("Fetching system logs via 'journalctl -n %d'", lines)
     try:
         result = subprocess.run(
             ["journalctl", "--no-pager", "-n", str(lines), "--output=short"],
@@ -952,12 +1019,18 @@ def get_system_logs(lines: int = 100) -> list[str]:
             text=True,
             timeout=10,
         )
+        log.debug("journalctl: returncode=%d", result.returncode)
         if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip().split("\n")
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+            log_lines = result.stdout.strip().split("\n")
+            log.info("Retrieved %d log lines via journalctl", len(log_lines))
+            return log_lines
+    except subprocess.TimeoutExpired:
+        log.warning("journalctl timed out")
+    except FileNotFoundError:
+        log.debug("journalctl not found")
 
     # Fallback to /var/log/syslog
+    log.debug("Fallback: reading /var/log/syslog")
     try:
         result = subprocess.run(
             ["tail", "-n", str(lines), "/var/log/syslog"],
@@ -965,12 +1038,18 @@ def get_system_logs(lines: int = 100) -> list[str]:
             text=True,
             timeout=10,
         )
+        log.debug("tail /var/log/syslog: returncode=%d", result.returncode)
         if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip().split("\n")
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+            log_lines = result.stdout.strip().split("\n")
+            log.info("Retrieved %d log lines from /var/log/syslog", len(log_lines))
+            return log_lines
+    except subprocess.TimeoutExpired:
+        log.warning("tail /var/log/syslog timed out")
+    except FileNotFoundError:
+        log.debug("/var/log/syslog not found or tail not available")
 
     # Fallback to /var/log/messages (RHEL-based systems)
+    log.debug("Fallback: reading /var/log/messages")
     try:
         result = subprocess.run(
             ["tail", "-n", str(lines), "/var/log/messages"],
@@ -978,11 +1057,17 @@ def get_system_logs(lines: int = 100) -> list[str]:
             text=True,
             timeout=10,
         )
+        log.debug("tail /var/log/messages: returncode=%d", result.returncode)
         if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip().split("\n")
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+            log_lines = result.stdout.strip().split("\n")
+            log.info("Retrieved %d log lines from /var/log/messages", len(log_lines))
+            return log_lines
+    except subprocess.TimeoutExpired:
+        log.warning("tail /var/log/messages timed out")
+    except FileNotFoundError:
+        log.debug("/var/log/messages not found or tail not available")
 
+    log.warning("No system logs available from any source")
     return ["No system logs available."]
 
 
@@ -1147,14 +1232,20 @@ def get_zbox_config() -> list[str]:
         List of lines from /etc/zbox.config or error message.
     """
     config_path = "/etc/zbox.config"
+    log.debug("Reading zBox config from: %s", config_path)
     try:
         with open(config_path) as f:
-            return f.read().strip().split("\n")
+            lines = f.read().strip().split("\n")
+            log.info("Read %d lines from %s", len(lines), config_path)
+            return lines
     except FileNotFoundError:
+        log.warning("Configuration file not found: %s", config_path)
         return [f"Configuration file not found: {config_path}"]
     except PermissionError:
+        log.error("Permission denied reading: %s", config_path)
         return [f"Permission denied reading: {config_path}"]
     except Exception as e:
+        log.exception("Error reading config %s: %s", config_path, e)
         return [f"Error reading config: {e}"]
 
 

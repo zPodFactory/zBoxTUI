@@ -6,6 +6,7 @@ from textual.app import App
 
 from .screens.dashboard import DashboardScreen
 from .screens.menu import MenuScreen
+from .utils.logging import get_logger
 from .utils.system import get_system_info
 from .widgets.dcui_dialog import (
     KeyboardDialog,
@@ -17,6 +18,8 @@ from .widgets.dcui_dialog import (
     TestDialog,
     ZBoxLogsDialog,
 )
+
+log = get_logger("app")
 
 
 class ZBoxTUI(App):
@@ -34,6 +37,7 @@ class ZBoxTUI(App):
         super().__init__()
         self._authenticated = False
         self.debug_svg = debug_svg
+        log.info("zBoxTUI application initialized (debug_svg=%s)", debug_svg)
 
     def save_debug_screenshot(self, name: str) -> None:
         """Save a debug screenshot if debug_svg mode is enabled."""
@@ -43,21 +47,26 @@ class ZBoxTUI(App):
                 filename = f"{name}.svg"
                 self.save_screenshot(filename, path="./")
                 self.log.info(f"Debug screenshot saved: {filename}")
+                log.debug("Debug screenshot saved: %s", filename)
 
             self.call_after_refresh(_take_screenshot)
 
     def on_mount(self) -> None:
         """Set up the initial screen."""
+        log.info("Application mounted, pushing dashboard screen")
         self.push_screen("dashboard")
 
     def action_show_login(self) -> None:
         """Show the login dialog."""
+        log.debug("action_show_login called (authenticated=%s)", self._authenticated)
         if self._authenticated:
             # Already authenticated, go directly to menu
+            log.info("User already authenticated, pushing menu screen")
             self.push_screen("menu")
         else:
             # Show login dialog
             info = get_system_info()
+            log.info("Showing login dialog for host: %s", info.hostname)
             self.push_screen(
                 LoginDialog(hostname=info.hostname),
                 callback=self._handle_login,
@@ -67,21 +76,27 @@ class ZBoxTUI(App):
         """Handle login dialog result."""
         if result is not None:
             username, password = result
+            log.debug("Login attempt for user: %s", username)
             # For now, accept any non-empty credentials
             # In a real app, this would validate against PAM or similar
             if username and password:
                 self._authenticated = True
+                log.info("User '%s' authenticated successfully", username)
                 self.push_screen("menu")
             else:
+                log.warning("Authentication failed: empty username or password")
                 self.push_screen(
                     MessageDialog(
                         "Authentication Failed",
                         "Please enter both username and password.",
                     ),
                 )
+        else:
+            log.debug("Login dialog cancelled by user")
 
     def action_show_shutdown(self) -> None:
         """Show the shutdown confirmation dialog."""
+        log.info("Showing shutdown dialog")
         self.push_screen(
             MessageDialog(
                 "Shut Down / Restart",
@@ -91,6 +106,7 @@ class ZBoxTUI(App):
 
     def handle_menu_action(self, action: str) -> None:
         """Handle a menu action."""
+        log.info("Menu action triggered: %s", action)
         # Map actions to handlers
         handlers = {
             "configure_password": self._show_password_dialog,
@@ -106,8 +122,10 @@ class ZBoxTUI(App):
 
         handler = handlers.get(action)
         if handler:
+            log.debug("Executing handler for action: %s", action)
             handler()
         else:
+            log.warning("No handler found for action: %s", action)
             self.push_screen(
                 MessageDialog(
                     "Not Implemented",
@@ -117,10 +135,12 @@ class ZBoxTUI(App):
 
     def _show_password_dialog(self) -> None:
         """Show password configuration dialog."""
+        log.info("Opening Configure Password dialog")
         self.push_screen(PasswordDialog())
 
     def _show_network_dialog(self) -> None:
         """Show network configuration dialog."""
+        log.info("Opening Configure Network dialog (not implemented)")
         self.push_screen(
             MessageDialog(
                 "Configure Network",
@@ -135,6 +155,7 @@ class ZBoxTUI(App):
 
     def _show_restart_network_dialog(self) -> None:
         """Show restart network confirmation."""
+        log.info("Opening Restart Network dialog (not implemented)")
         self.push_screen(
             MessageDialog(
                 "Restart Network",
@@ -145,14 +166,17 @@ class ZBoxTUI(App):
 
     def _show_test_network(self) -> None:
         """Show network connectivity test dialog."""
+        log.info("Opening Test Network dialog")
         self.push_screen(NetworkTestDialog())
 
     def _show_keyboard_dialog(self) -> None:
         """Show keyboard configuration dialog."""
+        log.info("Opening Configure Keyboard dialog")
         self.push_screen(KeyboardDialog())
 
     def _show_packages_dialog(self) -> None:
         """Show package management dialog."""
+        log.info("Opening Configure Packages dialog (not implemented)")
         self.push_screen(
             MessageDialog(
                 "Configure Packages",
@@ -166,12 +190,15 @@ class ZBoxTUI(App):
 
     def _show_system_logs(self) -> None:
         """Show system logs viewer."""
+        log.info("Opening System Logs viewer")
         self.push_screen(SystemLogsDialog())
 
     def _show_zbox_logs(self) -> None:
         """Show zBox configuration viewer."""
+        log.info("Opening zBox Logs viewer")
         self.push_screen(ZBoxLogsDialog())
 
     def _show_test_dialog(self) -> None:
         """Show test dialog for modal template demonstration."""
+        log.info("Opening Test Dialog")
         self.push_screen(TestDialog())
