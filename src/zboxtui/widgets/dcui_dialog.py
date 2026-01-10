@@ -715,3 +715,166 @@ class SystemLogsDialog(ModalScreen[None]):
     def action_close(self) -> None:
         """Close the dialog."""
         self.dismiss(None)
+
+
+def get_zbox_config() -> list[str]:
+    """Read the zBox configuration file.
+
+    Returns:
+        List of lines from /etc/zbox.config or error message.
+    """
+    config_path = "/etc/zbox.config"
+    try:
+        with open(config_path) as f:
+            return f.read().strip().split("\n")
+    except FileNotFoundError:
+        return [f"Configuration file not found: {config_path}"]
+    except PermissionError:
+        return [f"Permission denied reading: {config_path}"]
+    except Exception as e:
+        return [f"Error reading config: {e}"]
+
+
+class ZBoxLogsDialog(ModalScreen[None]):
+    """A dialog for viewing zBox configuration file."""
+
+    app: ZBoxTUI
+
+    BINDINGS = [
+        Binding("escape", "close", "Close", show=False),
+        Binding("enter", "close", "Close", show=False),
+        Binding("r", "refresh", "Refresh", show=False),
+        Binding("up", "scroll_up", "Scroll Up", show=False),
+        Binding("down", "scroll_down", "Scroll Down", show=False),
+        Binding("pageup", "page_up", "Page Up", show=False),
+        Binding("pagedown", "page_down", "Page Down", show=False),
+        Binding("home", "scroll_home", "Scroll to Top", show=False),
+        Binding("end", "scroll_end", "Scroll to Bottom", show=False),
+    ]
+
+    DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="ZBoxLogsDialog", width="90%") + """
+    ZBoxLogsDialog #dialog-outer {
+        height: 90%;
+    }
+
+    ZBoxLogsDialog #dialog-body {
+        height: 1fr;
+        overflow: hidden;
+    }
+
+    ZBoxLogsDialog #log-container {
+        height: 1fr;
+        max-height: 100%;
+        background: #1a1a1a;
+        color: #cccccc;
+        padding: 0 1;
+        scrollbar-size-horizontal: 0;
+    }
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+    ) -> None:
+        super().__init__(name=name, id=id, classes=classes)
+        self._config_lines: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        from textual.widgets import RichLog
+
+        with Container(id="dialog-outer"):
+            with Vertical(id="dialog-header"):
+                yield Static("")  # Spacer before title
+                yield Static("zBox Configuration", id="dialog-title")
+                yield Static("")  # Spacer after title
+                yield Static(
+                    "Viewing /etc/zbox.config",
+                    id="dialog-subtitle",
+                )
+                yield Static("")  # Spacer after subtitle
+            with Vertical(id="dialog-body"):
+                yield RichLog(id="log-container", wrap=False, highlight=True)
+                yield Static("")  # Spacer before footer
+                yield Static(
+                    "<↑/↓> Scroll  <PgUp/Dn> Page  <R> Refresh  <Enter/Esc> Close",
+                    id="dialog-footer",
+                )
+
+    def on_mount(self) -> None:
+        """Load config on mount and take debug screenshot."""
+        self.app.save_debug_screenshot("zbox_logs_dialog")
+        self._load_config()
+
+    def _load_config(self) -> None:
+        """Load zBox config and display it."""
+        from rich.text import Text
+        from textual.widgets import RichLog
+
+        self._config_lines = get_zbox_config()
+
+        log_container = self.query_one("#log-container", RichLog)
+        log_container.clear()
+
+        for line in self._config_lines:
+            text = Text(line)
+            log_container.write(text)
+
+        # Scroll to top for config file
+        log_container.scroll_home(animate=False)
+
+        # Update subtitle with line count
+        subtitle = self.query_one("#dialog-subtitle", Static)
+        subtitle.update(f"Viewing /etc/zbox.config ({len(self._config_lines)} lines)")
+
+    def action_refresh(self) -> None:
+        """Refresh the config."""
+        self._load_config()
+
+    def action_scroll_up(self) -> None:
+        """Scroll up one line."""
+        from textual.widgets import RichLog
+
+        log_container = self.query_one("#log-container", RichLog)
+        log_container.scroll_up()
+
+    def action_scroll_down(self) -> None:
+        """Scroll down one line."""
+        from textual.widgets import RichLog
+
+        log_container = self.query_one("#log-container", RichLog)
+        log_container.scroll_down()
+
+    def action_page_up(self) -> None:
+        """Scroll up one page."""
+        from textual.widgets import RichLog
+
+        log_container = self.query_one("#log-container", RichLog)
+        log_container.scroll_page_up()
+
+    def action_page_down(self) -> None:
+        """Scroll down one page."""
+        from textual.widgets import RichLog
+
+        log_container = self.query_one("#log-container", RichLog)
+        log_container.scroll_page_down()
+
+    def action_scroll_home(self) -> None:
+        """Scroll to the beginning."""
+        from textual.widgets import RichLog
+
+        log_container = self.query_one("#log-container", RichLog)
+        log_container.scroll_home()
+
+    def action_scroll_end(self) -> None:
+        """Scroll to the end."""
+        from textual.widgets import RichLog
+
+        log_container = self.query_one("#log-container", RichLog)
+        log_container.scroll_end()
+
+    def action_close(self) -> None:
+        """Close the dialog."""
+        self.dismiss(None)

@@ -13,6 +13,7 @@ from .widgets.dcui_dialog import (
     NetworkTestDialog,
     SystemLogsDialog,
     TestDialog,
+    ZBoxLogsDialog,
 )
 
 
@@ -178,14 +179,8 @@ class ZBoxTUI(App):
         self.push_screen(SystemLogsDialog())
 
     def _show_zbox_logs(self) -> None:
-        """Show zBox logs viewer."""
-        self.push_screen(
-            MessageDialog(
-                "View zBox System Logs",
-                "zBox log viewer will be implemented here.\n\n"
-                "This will show zBox-specific application logs.",
-            ),
-        )
+        """Show zBox configuration viewer."""
+        self.push_screen(ZBoxLogsDialog())
 
     def _show_test_dialog(self) -> None:
         """Show test dialog for modal template demonstration."""

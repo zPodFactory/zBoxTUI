@@ -55,8 +55,8 @@ MENU_ITEMS: list[MenuItem | None] = [
         "view_system_logs",
     ),
     MenuItem(
-        "View zBox System Logs",
-        "View zBox-specific application and service logs.",
+        "View zBox Logs",
+        "View zBox configuration file.",
         "view_zbox_logs",
     ),
     None,  # Separator
