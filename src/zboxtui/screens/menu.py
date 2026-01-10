@@ -39,11 +39,6 @@ MENU_ITEMS: list[MenuItem | None] = [
     ),
     None,  # Separator
     MenuItem(
-        "Configure Keyboard",
-        "Change the keyboard layout and input settings.",
-        "configure_keyboard",
-    ),
-    MenuItem(
         "Configure Packages",
         "Install, update, or remove system packages.",
         "configure_packages",

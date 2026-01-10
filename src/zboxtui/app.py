@@ -9,7 +9,6 @@ from .screens.menu import MenuScreen
 from .utils.logging import get_logger
 from .utils.system import get_system_info
 from .widgets.dcui_dialog import (
-    KeyboardDialog,
     LoginDialog,
     MessageDialog,
     NetworkTestDialog,
@@ -113,7 +112,6 @@ class ZBoxTUI(App):
             "configure_network": self._show_network_dialog,
             "restart_network": self._show_restart_network_dialog,
             "test_network": self._show_test_network,
-            "configure_keyboard": self._show_keyboard_dialog,
             "configure_packages": self._show_packages_dialog,
             "view_system_logs": self._show_system_logs,
             "view_zbox_logs": self._show_zbox_logs,
@@ -168,11 +166,6 @@ class ZBoxTUI(App):
         """Show network connectivity test dialog."""
         log.info("Opening Test Network dialog")
         self.push_screen(NetworkTestDialog())
-
-    def _show_keyboard_dialog(self) -> None:
-        """Show keyboard configuration dialog."""
-        log.info("Opening Configure Keyboard dialog")
-        self.push_screen(KeyboardDialog())
 
     def _show_packages_dialog(self) -> None:
         """Show package management dialog."""
