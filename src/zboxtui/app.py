@@ -7,7 +7,13 @@ from textual.app import App
 from .screens.dashboard import DashboardScreen
 from .screens.menu import MenuScreen
 from .utils.system import get_system_info
-from .widgets.dcui_dialog import LoginDialog, MessageDialog, NetworkTestDialog, TestDialog
+from .widgets.dcui_dialog import (
+    LoginDialog,
+    MessageDialog,
+    NetworkTestDialog,
+    SystemLogsDialog,
+    TestDialog,
+)
 
 
 class ZBoxTUI(App):
@@ -169,13 +175,7 @@ class ZBoxTUI(App):
 
     def _show_system_logs(self) -> None:
         """Show system logs viewer."""
-        self.push_screen(
-            MessageDialog(
-                "View System Logs",
-                "System log viewer will be implemented here.\n\n"
-                "This will show /var/log/syslog and other system logs.",
-            ),
-        )
+        self.push_screen(SystemLogsDialog())
 
     def _show_zbox_logs(self) -> None:
         """Show zBox logs viewer."""

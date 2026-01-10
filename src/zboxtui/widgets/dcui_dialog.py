@@ -345,7 +345,7 @@ class NetworkTestDialog(ModalScreen[None]):
                 yield Static("Test Network Connectivity", id="dialog-title")
                 yield Static("")  # Spacer after title
                 yield Static(
-                    "Testing connectivity to gateway and internet DNS servers...",
+                    "Testing connectivity to default gateway/internet...",
                     id="dialog-subtitle",
                 )
                 yield Static("")  # Spacer after subtitle
@@ -426,7 +426,7 @@ class NetworkTestDialog(ModalScreen[None]):
             status.update("Testing...")
 
         instruction = self.query_one("#dialog-subtitle", Static)
-        instruction.update("Testing connectivity to gateway and internet DNS servers...")
+        instruction.update("Testing connectivity to default gateway/internet...")
 
         # Re-run tests
         self._run_tests()
@@ -506,6 +506,211 @@ class TestDialog(ModalScreen[None]):
     def on_mount(self) -> None:
         """Take debug screenshot on mount."""
         self.app.save_debug_screenshot("test_dialog")
+
+    def action_close(self) -> None:
+        """Close the dialog."""
+        self.dismiss(None)
+
+
+def get_system_logs(lines: int = 100) -> list[str]:
+    """Get system logs from journalctl or /var/log/syslog.
+
+    Args:
+        lines: Number of lines to retrieve.
+
+    Returns:
+        List of log lines.
+    """
+    # Try journalctl first (modern systemd systems)
+    try:
+        result = subprocess.run(
+            ["journalctl", "--no-pager", "-n", str(lines), "--output=short"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().split("\n")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    # Fallback to /var/log/syslog
+    try:
+        result = subprocess.run(
+            ["tail", "-n", str(lines), "/var/log/syslog"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().split("\n")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    # Fallback to /var/log/messages (RHEL-based systems)
+    try:
+        result = subprocess.run(
+            ["tail", "-n", str(lines), "/var/log/messages"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().split("\n")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    return ["No system logs available."]
+
+
+class SystemLogsDialog(ModalScreen[None]):
+    """A dialog for viewing system logs with scrolling support."""
+
+    app: ZBoxTUI
+
+    BINDINGS = [
+        Binding("escape", "close", "Close", show=False),
+        Binding("enter", "close", "Close", show=False),
+        Binding("r", "refresh", "Refresh", show=False),
+        Binding("up", "scroll_up", "Scroll Up", show=False),
+        Binding("down", "scroll_down", "Scroll Down", show=False),
+        Binding("pageup", "page_up", "Page Up", show=False),
+        Binding("pagedown", "page_down", "Page Down", show=False),
+        Binding("home", "scroll_home", "Scroll to Top", show=False),
+        Binding("end", "scroll_end", "Scroll to Bottom", show=False),
+    ]
+
+    DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="SystemLogsDialog", width="90%") + """
+    SystemLogsDialog #dialog-outer {
+        height: 90%;
+    }
+
+    SystemLogsDialog #dialog-body {
+        height: 1fr;
+        overflow: hidden;
+    }
+
+    SystemLogsDialog #log-container {
+        height: 1fr;
+        max-height: 100%;
+        background: #1a1a1a;
+        color: #cccccc;
+        padding: 0 1;
+        scrollbar-size-horizontal: 0;
+    }
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+    ) -> None:
+        super().__init__(name=name, id=id, classes=classes)
+        self._log_lines: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        from textual.widgets import RichLog
+
+        with Container(id="dialog-outer"):
+            with Vertical(id="dialog-header"):
+                yield Static("")  # Spacer before title
+                yield Static("System Logs", id="dialog-title")
+                yield Static("")  # Spacer after title
+                yield Static(
+                    "Viewing recent system log entries",
+                    id="dialog-subtitle",
+                )
+                yield Static("")  # Spacer after subtitle
+            with Vertical(id="dialog-body"):
+                yield RichLog(id="log-container", wrap=False, highlight=True)
+                yield Static("")  # Spacer before footer
+                yield Static(
+                    "<↑/↓> Scroll  <PgUp/Dn> Page  <R> Refresh  <Enter/Esc> Close",
+                    id="dialog-footer",
+                )
+
+    def on_mount(self) -> None:
+        """Load logs on mount and take debug screenshot."""
+        self.app.save_debug_screenshot("system_logs_dialog")
+        self._load_logs()
+
+    def _load_logs(self) -> None:
+        """Load system logs and display them."""
+        from rich.text import Text
+        from textual.widgets import RichLog
+
+        self._log_lines = get_system_logs(lines=1000)
+
+        log_container = self.query_one("#log-container", RichLog)
+        log_container.clear()
+
+        for line in self._log_lines:
+            # Create a Rich Text object (no markup parsing issues)
+            text = Text(line)
+            # Color-code based on log level
+            line_lower = line.lower()
+            if "error" in line_lower or "fail" in line_lower or "crit" in line_lower:
+                text.stylize("red")
+            elif "warn" in line_lower:
+                text.stylize("yellow")
+            elif "info" in line_lower:
+                text.stylize("green")
+            log_container.write(text)
+
+        # Scroll to bottom to show most recent logs
+        log_container.scroll_end(animate=False)
+
+        # Update subtitle with line count
+        subtitle = self.query_one("#dialog-subtitle", Static)
+        subtitle.update(f"Showing {len(self._log_lines)} recent log entries")
+
+    def action_refresh(self) -> None:
+        """Refresh the logs."""
+        self._load_logs()
+
+    def action_scroll_up(self) -> None:
+        """Scroll up one line."""
+        from textual.widgets import RichLog
+
+        log_container = self.query_one("#log-container", RichLog)
+        log_container.scroll_up()
+
+    def action_scroll_down(self) -> None:
+        """Scroll down one line."""
+        from textual.widgets import RichLog
+
+        log_container = self.query_one("#log-container", RichLog)
+        log_container.scroll_down()
+
+    def action_page_up(self) -> None:
+        """Scroll up one page."""
+        from textual.widgets import RichLog
+
+        log_container = self.query_one("#log-container", RichLog)
+        log_container.scroll_page_up()
+
+    def action_page_down(self) -> None:
+        """Scroll down one page."""
+        from textual.widgets import RichLog
+
+        log_container = self.query_one("#log-container", RichLog)
+        log_container.scroll_page_down()
+
+    def action_scroll_home(self) -> None:
+        """Scroll to the beginning."""
+        from textual.widgets import RichLog
+
+        log_container = self.query_one("#log-container", RichLog)
+        log_container.scroll_home()
+
+    def action_scroll_end(self) -> None:
+        """Scroll to the end."""
+        from textual.widgets import RichLog
+
+        log_container = self.query_one("#log-container", RichLog)
+        log_container.scroll_end()
 
     def action_close(self) -> None:
         """Close the dialog."""

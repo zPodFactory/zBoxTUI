@@ -85,23 +85,26 @@ class MenuScreen(Screen):
 
     MenuScreen #menu-header {
         layout: horizontal;
-        background: #5a5a5a;
-        color: white;
         height: 1;
-        border-top: solid white;
-        border-left: solid white;
-        border-right: solid white;
     }
 
     MenuScreen #header-left {
         width: 1fr;
         padding: 0 1;
+        background: #ffd700;
+        color: black;
+        border-top: solid white;
+        border-left: solid white;
     }
 
     MenuScreen #header-right {
         width: 1fr;
         padding: 0 1;
         text-align: right;
+        background: #5a5a5a;
+        color: white;
+        border-top: solid white;
+        border-right: solid white;
     }
 
     MenuScreen #menu-body {
@@ -127,6 +130,10 @@ class MenuScreen(Screen):
         border-bottom: solid white;
     }
 
+    MenuScreen #detail-content {
+        height: 1fr;
+    }
+
     MenuScreen #detail-title {
         text-style: bold;
         margin-bottom: 1;
@@ -140,29 +147,23 @@ class MenuScreen(Screen):
         layout: horizontal;
         height: 1;
         width: 100%;
-        background: #ffd700;
-        color: black;
-        padding: 0 1;
+        background: #5a5a5a;
+        color: white;
+        dock: bottom;
     }
 
     MenuScreen #footer-left {
         width: 1fr;
-        background: #ffd700;
-        color: black;
     }
 
     MenuScreen #footer-center {
         width: 1fr;
         text-align: center;
-        background: #ffd700;
-        color: black;
     }
 
     MenuScreen #footer-right {
         width: 1fr;
         text-align: right;
-        background: #ffd700;
-        color: black;
     }
     """
 
@@ -179,7 +180,7 @@ class MenuScreen(Screen):
     def compose(self) -> ComposeResult:
         # Header with screen title and selected item (gray with white border top)
         with Horizontal(id="menu-header"):
-            yield Static("System Customization", id="header-left")
+            yield Static("System Configuration", id="header-left")
             yield Static("Configure Password", id="header-right")
 
         # Main body with menu and detail panel
@@ -187,19 +188,20 @@ class MenuScreen(Screen):
             # Left panel - yellow with menu
             with Vertical(id="menu-list-container"):
                 yield DCUIMenu(MENU_ITEMS, id="main-menu")
-                # Footer keybinds at bottom of yellow section
+
+            # Right panel - gray with details and footer
+            with Vertical(id="menu-detail-container"):
+                with Container(id="detail-content"):
+                    yield Static("Configure Password", id="detail-title")
+                    yield Static(
+                        "Change the root password for this system.",
+                        id="detail-description",
+                    )
+                # Footer keybinds at bottom of right section
                 with Horizontal(id="menu-footer"):
                     yield Static("<Enter> Change", id="footer-left")
                     yield Static("zBoxTUI v0.1.0", id="footer-center")
                     yield Static("<Esc> Log Out", id="footer-right")
-
-            # Right panel - gray with details
-            with Container(id="menu-detail-container"):
-                yield Static("Configure Password", id="detail-title")
-                yield Static(
-                    "Change the root password for this system.",
-                    id="detail-description",
-                )
 
     def on_mount(self) -> None:
         """Focus the menu on mount and take debug screenshot."""
