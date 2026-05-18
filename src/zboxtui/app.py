@@ -11,6 +11,8 @@ from .utils.system import get_system_info
 from .widgets.dcui_dialog import (
     LoginDialog,
     MessageDialog,
+    NetworkConfigDialog,
+    NetworkInterfaceDialog,
     NetworkTestDialog,
     PasswordDialog,
     SystemLogsDialog,
@@ -138,17 +140,20 @@ class ZBoxTUI(App):
 
     def _show_network_dialog(self) -> None:
         """Show network configuration dialog."""
-        log.info("Opening Configure Network dialog (not implemented)")
+        log.info("Opening Configure Network dialog")
         self.push_screen(
-            MessageDialog(
-                "Configure Network",
-                "Network configuration will be implemented here.\n\n"
-                "This will allow configuring:\n"
-                "- Network adapters\n"
-                "- IP addresses (DHCP/Static)\n"
-                "- DNS settings\n"
-                "- Default gateway",
-            ),
+            NetworkInterfaceDialog(),
+            callback=self._handle_interface_selection,
+        )
+
+    def _handle_interface_selection(self, interface_name: str | None) -> None:
+        """Handle interface selection result."""
+        if interface_name is None:
+            log.debug("Interface selection cancelled")
+            return
+        log.info("Interface selected: %s, opening config dialog", interface_name)
+        self.push_screen(
+            NetworkConfigDialog(interface_name),
         )
 
     def _show_restart_network_dialog(self) -> None:
