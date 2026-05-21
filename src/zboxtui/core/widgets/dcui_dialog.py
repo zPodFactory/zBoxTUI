@@ -1868,8 +1868,11 @@ class SystemStatsDialog(ModalScreen[None]):
 
     app: ZBoxTUI
 
-    # Number of samples retained for the network I/O sparklines.
-    _HISTORY = 60
+    # Samples retained for the network I/O sparklines. Sampled at 1 Hz, so
+    # this is also the window in seconds. Chosen to roughly match the
+    # rendered sparkline column count so each column shows one sample (no
+    # max-summary bucketing — every column = 1 second of traffic).
+    _HISTORY = 30
 
     BINDINGS = [
         Binding("escape", "close", "Close", show=False),
@@ -1906,9 +1909,26 @@ class SystemStatsDialog(ModalScreen[None]):
         margin: 0 2;
     }
 
+    /* Network rows are taller: the sparkline gets 3 rows of vertical
+     * resolution (~24 levels using fractional block chars vs. 8 at h=1),
+     * and the label/value sit centered alongside it. */
+    SystemStatsDialog .net-row {
+        height: 3;
+    }
+
+    SystemStatsDialog .net-row .stats-label {
+        height: 3;
+        content-align: left middle;
+    }
+
+    SystemStatsDialog .net-row .stats-value {
+        height: 3;
+        content-align: right middle;
+    }
+
     SystemStatsDialog Sparkline {
         width: 1fr;
-        height: 1;
+        height: 3;
         margin: 0 2;
     }
 
@@ -1935,8 +1955,14 @@ class SystemStatsDialog(ModalScreen[None]):
         self._prev_cpu = read_cpu_times()
         self._prev_net = read_net_bytes()
         self._prev_time = time.monotonic()
-        self._rx_history: deque[float] = deque([0.0], maxlen=self._HISTORY)
-        self._tx_history: deque[float] = deque([0.0], maxlen=self._HISTORY)
+        # Prefill with zeros so the sparkline shows full width from t=0
+        # instead of growing in from the left over the first 30 seconds.
+        self._rx_history: deque[float] = deque(
+            [0.0] * self._HISTORY, maxlen=self._HISTORY
+        )
+        self._tx_history: deque[float] = deque(
+            [0.0] * self._HISTORY, maxlen=self._HISTORY
+        )
 
     def compose(self) -> ComposeResult:
         with Container(id="dialog-outer"):
@@ -1969,11 +1995,11 @@ class SystemStatsDialog(ModalScreen[None]):
                     yield Static("--", classes="stats-value", id="disk-value")
 
                 yield Static("Network I/O", classes="stats-section")
-                with Horizontal(classes="stats-row"):
+                with Horizontal(classes="net-row"):
                     yield Static("RX", classes="stats-label")
                     yield Sparkline(list(self._rx_history), id="rx-spark")
                     yield Static("--", classes="stats-value", id="rx-value")
-                with Horizontal(classes="stats-row"):
+                with Horizontal(classes="net-row"):
                     yield Static("TX", classes="stats-label")
                     yield Sparkline(list(self._tx_history), id="tx-spark")
                     yield Static("--", classes="stats-value", id="tx-value")
