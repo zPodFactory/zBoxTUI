@@ -31,27 +31,27 @@ class DCUIMenu(Widget, can_focus=True):
     DCUIMenu {
         width: 100%;
         height: auto;
-        background: #ffd700;
-        color: black;
+        background: $z-bg;
+        color: $z-fg;
     }
 
     DCUIMenu > .menu-item {
         width: 100%;
         height: 1;
         padding: 0 1;
-        background: #ffd700;
-        color: black;
+        background: $z-bg;
+        color: $z-fg;
     }
 
     DCUIMenu > .menu-item.--selected {
-        background: #5a5a5a;
-        color: white;
+        background: $z-accent;
+        color: $z-accent-fg;
     }
 
     DCUIMenu > .menu-separator {
         width: 100%;
         height: 1;
-        background: #ffd700;
+        background: $z-bg;
     }
     """
 

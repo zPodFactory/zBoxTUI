@@ -54,6 +54,11 @@ MENU_ITEMS: list[MenuItem | None] = [
         "View zBox configuration file.",
         "view_zbox_logs",
     ),
+    MenuItem(
+        "View System Stats",
+        "View live CPU, memory, storage, and network metrics.",
+        "view_system_stats",
+    ),
     None,  # Separator
     MenuItem(
         "Test Dialog",
@@ -75,7 +80,7 @@ class MenuScreen(Screen):
     DEFAULT_CSS = """
     MenuScreen {
         layout: vertical;
-        background: #5a5a5a;
+        background: $z-bg;
     }
 
     MenuScreen #menu-header {
@@ -86,20 +91,20 @@ class MenuScreen(Screen):
     MenuScreen #header-left {
         width: 1fr;
         padding: 0 1;
-        background: #ffd700;
-        color: black;
-        border-top: solid white;
-        border-left: solid white;
+        background: $z-bg;
+        color: $z-fg;
+        border-top: solid $z-border;
+        border-left: solid $z-border;
     }
 
     MenuScreen #header-right {
         width: 1fr;
         padding: 0 1;
         text-align: right;
-        background: #5a5a5a;
-        color: white;
-        border-top: solid white;
-        border-right: solid white;
+        background: $z-panel;
+        color: $z-fg;
+        border-top: solid $z-border;
+        border-right: solid $z-border;
     }
 
     MenuScreen #menu-body {
@@ -109,20 +114,20 @@ class MenuScreen(Screen):
 
     MenuScreen #menu-list-container {
         width: 1fr;
-        background: #ffd700;
-        color: black;
+        background: $z-bg;
+        color: $z-fg;
         padding: 1 2;
-        border-left: solid white;
-        border-bottom: solid white;
+        border-left: solid $z-border;
+        border-bottom: solid $z-border;
     }
 
     MenuScreen #menu-detail-container {
         width: 1fr;
-        background: #5a5a5a;
-        color: white;
+        background: $z-panel;
+        color: $z-fg;
         padding: 1 2 0 2;
-        border-right: solid white;
-        border-bottom: solid white;
+        border-right: solid $z-border;
+        border-bottom: solid $z-border;
     }
 
     MenuScreen #detail-content {
@@ -135,15 +140,15 @@ class MenuScreen(Screen):
     }
 
     MenuScreen #detail-description {
-        color: #cccccc;
+        color: $z-fg-dim;
     }
 
     MenuScreen #menu-footer {
         layout: horizontal;
         height: 1;
         width: 100%;
-        background: #5a5a5a;
-        color: white;
+        background: $z-panel;
+        color: $z-fg;
         dock: bottom;
     }
 

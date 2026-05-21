@@ -5,16 +5,34 @@ from __future__ import annotations
 import asyncio
 import re
 import subprocess
+import time
+from collections import deque
 from typing import TYPE_CHECKING
 
+from rich.text import Text
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
+from textual.reactive import reactive
 from textual.screen import ModalScreen
-from textual.widgets import Input, Static
+from textual.widget import Widget
+from textual.widgets import Input, Sparkline, Static
 
 from ..utils.logging import get_logger
+from ..utils.system import (
+    cpu_percent,
+    format_size,
+    get_cpu_count,
+    get_cpu_info,
+    get_disk_usage,
+    get_memory_usage,
+    read_cpu_times,
+    read_net_bytes,
+)
+
+# 1 GiB in bytes - memory and storage are reported in GB (1024-based).
+_GIB = 1024**3
 
 if TYPE_CHECKING:
     from textual.events import Key
@@ -30,7 +48,7 @@ DCUI_DIALOG_CSS = """
     /* Modal fills screen with black background */
     {dialog_class} {{
         align: center middle;
-        background: black;
+        background: $z-crust;
     }}
 
     /* Outer container - no border, sections have their own */
@@ -42,42 +60,42 @@ DCUI_DIALOG_CSS = """
 
     /* Grey header section with top and side borders */
     {dialog_class} #dialog-header {{
-        background: #5a5a5a;
-        color: white;
+        background: $z-panel;
+        color: $z-fg;
         height: auto;
         padding: 0 2;
-        border-top: solid white;
-        border-left: solid white;
-        border-right: solid white;
+        border-top: solid $z-border;
+        border-left: solid $z-border;
+        border-right: solid $z-border;
     }}
 
     {dialog_class} #dialog-title {{
-        color: #ffd700;
+        color: $z-accent;
         text-align: center;
         height: 1;
     }}
 
     {dialog_class} #dialog-subtitle {{
-        color: #aaaaaa;
+        color: $z-fg-dim;
         text-align: center;
         height: auto;
     }}
 
     /* Yellow body section with bottom and side borders */
     {dialog_class} #dialog-body {{
-        background: #ffd700;
-        color: black;
+        background: $z-bg;
+        color: $z-fg;
         height: auto;
         padding: 1 2;
-        border-bottom: solid white;
-        border-left: solid white;
-        border-right: solid white;
+        border-bottom: solid $z-border;
+        border-left: solid $z-border;
+        border-right: solid $z-border;
     }}
 
     /* Footer with keybinds - at bottom of yellow section */
     {dialog_class} #dialog-footer {{
-        background: #ffd700;
-        color: black;
+        background: $z-bg;
+        color: $z-fg;
         text-align: center;
         height: 1;
     }}
@@ -101,21 +119,21 @@ class LoginDialog(ModalScreen[tuple[str, str] | None]):
 
     LoginDialog .form-label {
         width: 15;
-        color: black;
+        color: $z-fg;
         height: 1;
         content-align: left middle;
     }
 
     LoginDialog .form-input {
         width: 1fr;
-        background: #3a3a3a;
-        color: white;
+        background: $z-mantle;
+        color: $z-fg;
         border: none;
         height: 1;
     }
 
     LoginDialog .form-input:focus {
-        background: #4a4a4a;
+        background: $z-panel-focus;
     }
     """
 
@@ -204,31 +222,31 @@ class PasswordDialog(ModalScreen[bool]):
 
     PasswordDialog .form-label {
         width: 20;
-        color: black;
+        color: $z-fg;
         height: 1;
         content-align: left middle;
     }
 
     PasswordDialog .form-input {
         width: 1fr;
-        background: #3a3a3a;
-        color: white;
+        background: $z-mantle;
+        color: $z-fg;
         border: none;
         height: 1;
     }
 
     PasswordDialog .form-input:focus {
-        background: #4a4a4a;
+        background: $z-panel-focus;
     }
 
     PasswordDialog #error-message {
-        color: #8b0000;
+        color: $z-error;
         height: 1;
         text-align: center;
     }
 
     PasswordDialog #success-message {
-        color: #006400;
+        color: $z-success;
         height: 1;
         text-align: center;
     }
@@ -369,7 +387,7 @@ class MessageDialog(ModalScreen[bool]):
 
     DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="MessageDialog", width=50) + """
     MessageDialog #dialog-message {
-        color: black;
+        color: $z-fg;
         height: auto;
     }
     """
@@ -485,6 +503,11 @@ class NetworkTestDialog(ModalScreen[None]):
 
     app: ZBoxTUI
 
+    # Braille frames for the per-row "currently testing" spinner.
+    _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    # Placeholder shown on rows whose test has not started yet.
+    _PENDING_LABEL = "Waiting"
+
     BINDINGS = [
         Binding("escape", "close", "Close", show=False),
         Binding("enter", "close", "Close", show=False),
@@ -498,24 +521,24 @@ class NetworkTestDialog(ModalScreen[None]):
 
     NetworkTestDialog .test-label {
         width: 35;
-        color: black;
+        color: $z-fg;
     }
 
     NetworkTestDialog .test-status {
         width: 1fr;
-        color: black;
+        color: $z-fg;
     }
 
     NetworkTestDialog .test-status.--success {
-        color: #006400;
+        color: $z-success;
     }
 
     NetworkTestDialog .test-status.--failure {
-        color: #8b0000;
+        color: $z-error;
     }
 
     NetworkTestDialog .test-status.--pending {
-        color: #555555;
+        color: $z-fg-faint;
     }
     """
 
@@ -528,6 +551,9 @@ class NetworkTestDialog(ModalScreen[None]):
     ) -> None:
         super().__init__(name=name, id=id, classes=classes)
         self._gateway = get_default_gateway()
+        # The status row currently being tested (animated by the spinner timer).
+        self._active_status: Static | None = None
+        self._spinner_index = 0
 
     def compose(self) -> ComposeResult:
         with Container(id="dialog-outer"):
@@ -546,24 +572,25 @@ class NetworkTestDialog(ModalScreen[None]):
                     gateway_label = f"Default Gateway ({self._gateway}):"
                 else:
                     gateway_label = "Default Gateway (not found):"
+                pending = self._PENDING_LABEL
                 with Horizontal(classes="test-row"):
                     yield Static(gateway_label, classes="test-label")
                     yield Static(
-                        "Testing...", classes="test-status --pending", id="gateway-status"
+                        pending, classes="test-status --pending", id="gateway-status"
                     )
 
                 # Google DNS test
                 with Horizontal(classes="test-row"):
                     yield Static("Google DNS (8.8.8.8):", classes="test-label")
                     yield Static(
-                        "Testing...", classes="test-status --pending", id="google-status"
+                        pending, classes="test-status --pending", id="google-status"
                     )
 
                 # Cloudflare DNS test
                 with Horizontal(classes="test-row"):
                     yield Static("Cloudflare DNS (1.1.1.1):", classes="test-label")
                     yield Static(
-                        "Testing...", classes="test-status --pending", id="cloudflare-status"
+                        pending, classes="test-status --pending", id="cloudflare-status"
                     )
 
                 yield Static("")  # Spacer before footer
@@ -572,49 +599,70 @@ class NetworkTestDialog(ModalScreen[None]):
     def on_mount(self) -> None:
         """Start network tests on mount and take debug screenshot."""
         self.app.save_debug_screenshot("network_test_dialog")
+        # Animate the spinner on whichever row is currently being tested.
+        self.set_interval(0.1, self._advance_spinner)
         self._run_tests()
+
+    def _advance_spinner(self) -> None:
+        """Advance the spinner on the row currently under test, if any."""
+        if self._active_status is None:
+            return
+        self._spinner_index = (self._spinner_index + 1) % len(self._SPINNER_FRAMES)
+        self._active_status.update(self._SPINNER_FRAMES[self._spinner_index])
+
+    def _begin_test(self, status: Static) -> None:
+        """Mark a status row as the one currently being tested (spinning)."""
+        status.remove_class("--success", "--failure")
+        status.add_class("--pending")
+        self._spinner_index = 0
+        status.update(self._SPINNER_FRAMES[0])
+        self._active_status = status
+
+    def _finish_test(self, status: Static, success: bool, message: str) -> None:
+        """Mark a status row with its final result."""
+        if self._active_status is status:
+            self._active_status = None
+        status.remove_class("--pending")
+        status.add_class("--success" if success else "--failure")
+        status.update(message)
 
     @work(exclusive=True)
     async def _run_tests(self) -> None:
-        """Run all network connectivity tests."""
+        """Run all network connectivity tests, one row at a time."""
         # Test gateway
         gateway_status = self.query_one("#gateway-status", Static)
+        self._begin_test(gateway_status)
         if self._gateway:
             success, message = await ping_host(self._gateway)
-            gateway_status.remove_class("--pending")
-            gateway_status.add_class("--success" if success else "--failure")
-            gateway_status.update(message)
+            self._finish_test(gateway_status, success, message)
         else:
-            gateway_status.remove_class("--pending")
-            gateway_status.add_class("--failure")
-            gateway_status.update("No gateway configured")
+            self._finish_test(gateway_status, False, "No gateway configured")
 
         # Test Google DNS
         google_status = self.query_one("#google-status", Static)
+        self._begin_test(google_status)
         success, message = await ping_host("8.8.8.8")
-        google_status.remove_class("--pending")
-        google_status.add_class("--success" if success else "--failure")
-        google_status.update(message)
+        self._finish_test(google_status, success, message)
 
         # Test Cloudflare DNS
         cloudflare_status = self.query_one("#cloudflare-status", Static)
+        self._begin_test(cloudflare_status)
         success, message = await ping_host("1.1.1.1")
-        cloudflare_status.remove_class("--pending")
-        cloudflare_status.add_class("--success" if success else "--failure")
-        cloudflare_status.update(message)
+        self._finish_test(cloudflare_status, success, message)
 
         # Update instruction text
+        self._active_status = None
         instruction = self.query_one("#dialog-subtitle", Static)
         instruction.update("Network connectivity test complete.")
 
     def action_retest(self) -> None:
         """Re-run all tests."""
-        # Reset statuses
+        # Reset statuses to the "not started" pending state
         for status_id in ["#gateway-status", "#google-status", "#cloudflare-status"]:
             status = self.query_one(status_id, Static)
             status.remove_class("--success", "--failure")
             status.add_class("--pending")
-            status.update("Testing...")
+            status.update(self._PENDING_LABEL)
 
         instruction = self.query_one("#dialog-subtitle", Static)
         instruction.update("Testing connectivity to default gateway/internet...")
@@ -647,7 +695,7 @@ class TestDialog(ModalScreen[None]):
     DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="TestDialog", width=70) + """
     TestDialog .content-line {
         height: 1;
-        color: black;
+        color: $z-fg;
     }
     """
 
@@ -803,8 +851,8 @@ class SystemLogsDialog(ModalScreen[None]):
     SystemLogsDialog #log-container {
         height: 1fr;
         max-height: 100%;
-        background: #1a1a1a;
-        color: #cccccc;
+        background: $z-crust;
+        color: $z-fg-dim;
         padding: 0 1;
         scrollbar-size-horizontal: 0;
     }
@@ -981,8 +1029,8 @@ class ZBoxLogsDialog(ModalScreen[None]):
     ZBoxLogsDialog #log-container {
         height: 1fr;
         max-height: 100%;
-        background: #1a1a1a;
-        color: #cccccc;
+        background: $z-crust;
+        color: $z-fg-dim;
         padding: 0 1;
         scrollbar-size-horizontal: 0;
     }
@@ -1113,17 +1161,17 @@ class NetworkInterfaceDialog(ModalScreen[str | None]):
         height: 1;
         width: 100%;
         padding: 0 1;
-        background: #ffd700;
-        color: black;
+        background: $z-bg;
+        color: $z-fg;
     }
 
     NetworkInterfaceDialog .interface-item.--selected {
-        background: #5a5a5a;
-        color: white;
+        background: $z-accent;
+        color: $z-accent-fg;
     }
 
     NetworkInterfaceDialog #no-interfaces {
-        color: #8b0000;
+        color: $z-error;
         height: 1;
         text-align: center;
     }
@@ -1233,39 +1281,39 @@ class NetworkConfigDialog(ModalScreen[bool]):
 
     NetworkConfigDialog .form-label {
         width: 15;
-        color: black;
+        color: $z-fg;
         height: 1;
         content-align: left middle;
     }
 
     NetworkConfigDialog .form-input {
         width: 1fr;
-        background: #3a3a3a;
-        color: white;
+        background: $z-mantle;
+        color: $z-fg;
         border: none;
         height: 1;
     }
 
     NetworkConfigDialog .form-input:focus {
-        background: #4a4a4a;
+        background: $z-panel-focus;
     }
 
     NetworkConfigDialog .dhcp-field {
         width: 1fr;
-        background: #3a3a3a;
+        background: $z-mantle;
         height: 1;
     }
 
     NetworkConfigDialog .dhcp-value {
         width: 1fr;
-        color: white;
+        color: $z-fg;
         padding: 0 1;
         content-align: left middle;
     }
 
     NetworkConfigDialog .dhcp-tag {
         width: auto;
-        color: #888888;
+        color: $z-scrollbar;
         padding: 0 1;
         content-align: right middle;
     }
@@ -1276,22 +1324,22 @@ class NetworkConfigDialog(ModalScreen[bool]):
     }
 
     NetworkConfigDialog #dhcp-label {
-        color: black;
+        color: $z-fg;
     }
 
     NetworkConfigDialog #dhcp-info {
-        color: #555555;
+        color: $z-fg-faint;
         margin-left: 1;
     }
 
     NetworkConfigDialog #error-message {
-        color: #8b0000;
+        color: $z-error;
         height: 1;
         text-align: center;
     }
 
     NetworkConfigDialog #section-label {
-        color: #555555;
+        color: $z-fg-faint;
         height: 1;
         margin-top: 1;
     }
@@ -1707,3 +1755,205 @@ class NetworkConfigDialog(ModalScreen[bool]):
     def action_cancel(self) -> None:
         """Cancel the dialog."""
         self.dismiss(False)
+
+
+class MeterBar(Widget):
+    """A thin horizontal gauge that fills in proportion to `percent` (0-100)."""
+
+    COMPONENT_CLASSES = {"meter--filled", "meter--empty"}
+
+    DEFAULT_CSS = """
+    MeterBar {
+        width: 1fr;
+        height: 1;
+    }
+    MeterBar > .meter--filled {
+        color: $z-accent;
+    }
+    MeterBar > .meter--empty {
+        color: $z-panel;
+    }
+    """
+
+    percent: reactive[float] = reactive(0.0)
+
+    def render(self) -> Text:
+        width = self.size.width or 1
+        ratio = max(0.0, min(1.0, self.percent / 100.0))
+        filled = round(ratio * width)
+        text = Text(no_wrap=True, overflow="crop")
+        text.append("━" * filled, self.get_component_rich_style("meter--filled"))
+        text.append("━" * (width - filled), self.get_component_rich_style("meter--empty"))
+        return text
+
+
+class SystemStatsDialog(ModalScreen[None]):
+    """A live System Metrics panel: CPU, memory, storage and network I/O."""
+
+    app: ZBoxTUI
+
+    # Number of samples retained for the network I/O sparklines.
+    _HISTORY = 60
+
+    BINDINGS = [
+        Binding("escape", "close", "Close", show=False),
+        Binding("enter", "close", "Close", show=False),
+        Binding("q", "close", "Close", show=False),
+    ]
+
+    DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="SystemStatsDialog", width=72) + """
+    SystemStatsDialog .stats-section {
+        color: $z-fg;
+        text-style: bold;
+        height: 1;
+        margin-top: 1;
+    }
+
+    SystemStatsDialog .stats-row {
+        height: 1;
+    }
+
+    SystemStatsDialog .stats-label {
+        width: 26;
+        color: $z-fg;
+    }
+
+    SystemStatsDialog .stats-value {
+        width: 9;
+        text-align: right;
+        color: $z-fg;
+    }
+
+    SystemStatsDialog MeterBar {
+        width: 1fr;
+        height: 1;
+        margin: 0 2;
+    }
+
+    SystemStatsDialog Sparkline {
+        width: 1fr;
+        height: 1;
+        margin: 0 2;
+    }
+
+    SystemStatsDialog Sparkline > .sparkline--max-color {
+        color: $z-accent;
+    }
+
+    SystemStatsDialog Sparkline > .sparkline--min-color {
+        color: $z-fg-faint;
+    }
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+    ) -> None:
+        super().__init__(name=name, id=id, classes=classes)
+        self._cpu_model = get_cpu_info()
+        self._cpu_count = get_cpu_count()
+        # Baseline samples for the first delta-based reading.
+        self._prev_cpu = read_cpu_times()
+        self._prev_net = read_net_bytes()
+        self._prev_time = time.monotonic()
+        self._rx_history: deque[float] = deque([0.0], maxlen=self._HISTORY)
+        self._tx_history: deque[float] = deque([0.0], maxlen=self._HISTORY)
+
+    def compose(self) -> ComposeResult:
+        with Container(id="dialog-outer"):
+            with Vertical(id="dialog-header"):
+                yield Static("")  # Spacer before title
+                yield Static("System Metrics", id="dialog-title")
+                yield Static("")  # Spacer after title
+                yield Static(
+                    f"{self._cpu_model} ({self._cpu_count} cores)",
+                    id="dialog-subtitle",
+                )
+                yield Static("")  # Spacer after subtitle
+            with Vertical(id="dialog-body"):
+                yield Static("CPU", classes="stats-section")
+                with Horizontal(classes="stats-row"):
+                    yield Static("Current Load", classes="stats-label")
+                    yield MeterBar(id="cpu-meter")
+                    yield Static("--", classes="stats-value", id="cpu-value")
+
+                yield Static("Memory", classes="stats-section")
+                with Horizontal(classes="stats-row"):
+                    yield Static("--", classes="stats-label", id="mem-label")
+                    yield MeterBar(id="mem-meter")
+                    yield Static("--", classes="stats-value", id="mem-value")
+
+                yield Static("Storage", classes="stats-section")
+                with Horizontal(classes="stats-row"):
+                    yield Static("--", classes="stats-label", id="disk-label")
+                    yield MeterBar(id="disk-meter")
+                    yield Static("--", classes="stats-value", id="disk-value")
+
+                yield Static("Network I/O", classes="stats-section")
+                with Horizontal(classes="stats-row"):
+                    yield Static("RX", classes="stats-label")
+                    yield Sparkline(list(self._rx_history), id="rx-spark")
+                    yield Static("--", classes="stats-value", id="rx-value")
+                with Horizontal(classes="stats-row"):
+                    yield Static("TX", classes="stats-label")
+                    yield Sparkline(list(self._tx_history), id="tx-spark")
+                    yield Static("--", classes="stats-value", id="tx-value")
+
+                yield Static("")  # Spacer before footer
+                yield Static("<Enter/Esc/Q> Close", id="dialog-footer")
+
+    def on_mount(self) -> None:
+        """Populate stats on mount and refresh every second."""
+        self.app.save_debug_screenshot("system_stats_dialog")
+        self._refresh_stats()
+        self.set_interval(1.0, self._refresh_stats)
+
+    def _refresh_stats(self) -> None:
+        """Sample the system and update every metric widget."""
+        now = time.monotonic()
+        elapsed = max(now - self._prev_time, 1e-6)
+
+        # CPU load (delta between two /proc/stat samples).
+        cur_cpu = read_cpu_times()
+        cpu_pct = cpu_percent(self._prev_cpu, cur_cpu)
+        self._prev_cpu = cur_cpu
+        self.query_one("#cpu-meter", MeterBar).percent = cpu_pct
+        self.query_one("#cpu-value", Static).update(f"{cpu_pct:.1f}%")
+
+        # Memory.
+        mem_used, mem_total = get_memory_usage()
+        mem_pct = 100.0 * mem_used / mem_total if mem_total else 0.0
+        self.query_one("#mem-meter", MeterBar).percent = mem_pct
+        self.query_one("#mem-label", Static).update(
+            f"{mem_used / _GIB:.1f} GB Used / {mem_total / _GIB:.0f} GB"
+        )
+        self.query_one("#mem-value", Static).update(f"{mem_pct:.1f}%")
+
+        # Storage.
+        disk_used, disk_total = get_disk_usage()
+        disk_pct = 100.0 * disk_used / disk_total if disk_total else 0.0
+        self.query_one("#disk-meter", MeterBar).percent = disk_pct
+        self.query_one("#disk-label", Static).update(
+            f"{disk_used / _GIB:.1f} GB Used / {disk_total / _GIB:.0f} GB"
+        )
+        self.query_one("#disk-value", Static).update(f"{disk_pct:.1f}%")
+
+        # Network I/O rates (delta between two /proc/net/dev samples).
+        cur_net = read_net_bytes()
+        rx_rate = max(0.0, (cur_net[0] - self._prev_net[0]) / elapsed)
+        tx_rate = max(0.0, (cur_net[1] - self._prev_net[1]) / elapsed)
+        self._prev_net = cur_net
+        self._prev_time = now
+        self._rx_history.append(rx_rate)
+        self._tx_history.append(tx_rate)
+        self.query_one("#rx-spark", Sparkline).data = list(self._rx_history)
+        self.query_one("#tx-spark", Sparkline).data = list(self._tx_history)
+        self.query_one("#rx-value", Static).update(f"{format_size(rx_rate)}/s")
+        self.query_one("#tx-value", Static).update(f"{format_size(tx_rate)}/s")
+
+    def action_close(self) -> None:
+        """Close the dialog."""
+        self.dismiss(None)

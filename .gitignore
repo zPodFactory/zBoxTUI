@@ -2,3 +2,9 @@ __pycache__/
 *.pyc
 *.svg
 .venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+zboxtui.log
+tmp/
+.claude/

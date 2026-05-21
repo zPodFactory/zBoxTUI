@@ -32,6 +32,10 @@ uv run pytest tests/test_app.py::test_system_info -v
 # Debug mode - auto-capture SVG screenshots of screens/dialogs
 uv run zboxtui --debug-svg
 # Screenshots are saved to the current directory (dashboard.svg, login_dialog.svg, etc.)
+
+# Force a color palette (default is 'auto', detected from the terminal)
+uv run zboxtui --palette catppuccin   # 24-bit Catppuccin Mocha
+uv run zboxtui --palette console      # 16-color ANSI (Linux console)
 ```
 
 ## Architecture
@@ -57,7 +61,11 @@ uv run zboxtui --debug-svg
 - `system.py`: System info gathering (hostname, CPU, memory, network interfaces via `/proc` and `ip` command)
 
 ### Styling
-- Color scheme: gray (#5a5a5a), yellow (#ffd700), black, white
+- All CSS references colors via `$z-*` variables (`$z-bg`, `$z-accent`, ...), never hardcoded hex
+- `theme.py` defines two palettes and picks one at startup based on terminal capabilities:
+  - `CATPPUCCIN_PALETTE`: Catppuccin Mocha (violet-tinted), used on truecolor terminals
+  - `CONSOLE_PALETTE`: 16-color ANSI (`ansi_*` names), used on the Linux console / non-truecolor
+- `ZBoxTUI.get_css_variables()` injects the active palette; selection is `auto` (detected) or forced via `--palette`
 - Styles defined in `styles.tcss` and inline `DEFAULT_CSS` in widgets
 - Modal dialogs use `align: center middle` for centering
 

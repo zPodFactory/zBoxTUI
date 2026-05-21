@@ -6,6 +6,7 @@ from textual.app import App
 
 from .screens.dashboard import DashboardScreen
 from .screens.menu import MenuScreen
+from .theme import select_palette
 from .utils.logging import get_logger
 from .utils.system import get_system_info
 from .widgets.dcui_dialog import (
@@ -16,6 +17,7 @@ from .widgets.dcui_dialog import (
     NetworkTestDialog,
     PasswordDialog,
     SystemLogsDialog,
+    SystemStatsDialog,
     TestDialog,
     ZBoxLogsDialog,
 )
@@ -34,11 +36,23 @@ class ZBoxTUI(App):
         "menu": MenuScreen,
     }
 
-    def __init__(self, debug_svg: bool = False) -> None:
+    def __init__(self, debug_svg: bool = False, palette: str = "auto") -> None:
+        # Must be set before super().__init__(), which calls get_css_variables().
+        self._palette_name, self._palette = select_palette(palette)
         super().__init__()
         self._authenticated = False
         self.debug_svg = debug_svg
-        log.info("zBoxTUI application initialized (debug_svg=%s)", debug_svg)
+        log.info(
+            "zBoxTUI application initialized (debug_svg=%s, palette=%s)",
+            debug_svg,
+            self._palette_name,
+        )
+
+    def get_css_variables(self) -> dict[str, str]:
+        """Inject the active palette as CSS variables ($z-bg, $z-accent, ...)."""
+        variables = super().get_css_variables()
+        variables.update(self._palette)
+        return variables
 
     def save_debug_screenshot(self, name: str) -> None:
         """Save a debug screenshot if debug_svg mode is enabled."""
@@ -117,6 +131,7 @@ class ZBoxTUI(App):
             "configure_packages": self._show_packages_dialog,
             "view_system_logs": self._show_system_logs,
             "view_zbox_logs": self._show_zbox_logs,
+            "view_system_stats": self._show_system_stats,
             "test_dialog": self._show_test_dialog,
         }
 
@@ -195,6 +210,11 @@ class ZBoxTUI(App):
         """Show zBox configuration viewer."""
         log.info("Opening zBox Logs viewer")
         self.push_screen(ZBoxLogsDialog())
+
+    def _show_system_stats(self) -> None:
+        """Show the live system metrics panel."""
+        log.info("Opening System Stats dialog")
+        self.push_screen(SystemStatsDialog())
 
     def _show_test_dialog(self) -> None:
         """Show test dialog for modal template demonstration."""

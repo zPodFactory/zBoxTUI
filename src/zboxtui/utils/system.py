@@ -1,7 +1,9 @@
 """System information utilities."""
 
+import os
 import platform
 import re
+import shutil
 import socket
 import subprocess
 from dataclasses import dataclass
@@ -310,6 +312,86 @@ def get_interface_config(iface_name: str) -> InterfaceConfig:
         dns1=dns1,
         dns2=dns2,
     )
+
+
+def get_cpu_count() -> int:
+    """Return the number of logical CPUs."""
+    return os.cpu_count() or 1
+
+
+def read_cpu_times() -> tuple[int, int]:
+    """Return (idle, total) CPU jiffies from the first line of /proc/stat."""
+    try:
+        with open("/proc/stat") as f:
+            fields = [int(x) for x in f.readline().split()[1:]]
+        # cpu: user nice system idle iowait irq softirq steal guest guest_nice
+        idle = fields[3] + (fields[4] if len(fields) > 4 else 0)
+        return idle, sum(fields)
+    except (FileNotFoundError, PermissionError, ValueError, IndexError):
+        return 0, 0
+
+
+def cpu_percent(prev: tuple[int, int], cur: tuple[int, int]) -> float:
+    """Compute CPU utilization percent between two read_cpu_times() samples."""
+    idle_delta = cur[0] - prev[0]
+    total_delta = cur[1] - prev[1]
+    if total_delta <= 0:
+        return 0.0
+    return max(0.0, min(100.0, 100.0 * (1.0 - idle_delta / total_delta)))
+
+
+def read_net_bytes() -> tuple[int, int]:
+    """Return (rx_bytes, tx_bytes) totalled over non-loopback interfaces."""
+    rx = tx = 0
+    try:
+        with open("/proc/net/dev") as f:
+            for line in f.readlines()[2:]:  # skip the two header rows
+                name, _, rest = line.partition(":")
+                if name.strip() == "lo":
+                    continue
+                fields = rest.split()
+                if len(fields) >= 9:
+                    rx += int(fields[0])
+                    tx += int(fields[8])
+    except (FileNotFoundError, PermissionError, ValueError):
+        pass
+    return rx, tx
+
+
+def get_memory_usage() -> tuple[int, int]:
+    """Return (used_bytes, total_bytes) of system memory."""
+    total = available = 0
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    total = int(line.split()[1]) * 1024
+                elif line.startswith("MemAvailable:"):
+                    available = int(line.split()[1]) * 1024
+    except (FileNotFoundError, PermissionError, ValueError):
+        pass
+    return max(0, total - available), total
+
+
+def get_disk_usage(path: str = "/") -> tuple[int, int]:
+    """Return (used_bytes, total_bytes) for the filesystem containing `path`."""
+    try:
+        usage = shutil.disk_usage(path)
+        return usage.used, usage.total
+    except OSError:
+        return 0, 0
+
+
+def format_size(num_bytes: float, decimals: int = 1) -> str:
+    """Format a byte count as a human-readable string (1024-based units)."""
+    value = float(num_bytes)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(value) < 1024.0 or unit == "TB":
+            if unit == "B":
+                return f"{value:.0f} {unit}"
+            return f"{value:.{decimals}f} {unit}"
+        value /= 1024.0
+    return f"{value:.{decimals}f} TB"
 
 
 def validate_ipv4(ip: str) -> bool:

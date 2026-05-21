@@ -27,29 +27,29 @@ class DashboardScreen(Screen):
 
     DEFAULT_CSS = """
     DashboardScreen {
-        background: #5a5a5a;
+        background: $z-bg;
         layout: grid;
         grid-size: 1 2;
         grid-rows: 1fr 1fr;
     }
 
     DashboardScreen #dashboard-header {
-        background: #5a5a5a;
-        color: white;
+        background: $z-panel;
+        color: $z-fg;
         row-span: 1;
         padding: 1 2;
-        border-top: solid white;
-        border-left: solid white;
-        border-right: solid white;
+        border-top: solid $z-border;
+        border-left: solid $z-border;
+        border-right: solid $z-border;
     }
 
     DashboardScreen #dashboard-content {
-        background: #ffd700;
-        color: black;
+        background: $z-bg;
+        color: $z-fg;
         row-span: 1;
-        border-left: solid white;
-        border-right: solid white;
-        border-bottom: solid white;
+        border-left: solid $z-border;
+        border-right: solid $z-border;
+        border-bottom: solid $z-border;
     }
 
     DashboardScreen #content-inner {
@@ -61,22 +61,22 @@ class DashboardScreen(Screen):
         layout: horizontal;
         height: 1;
         width: 100%;
-        background: #ffd700;
-        color: black;
+        background: $z-bg;
+        color: $z-fg;
         padding: 0 1;
     }
 
     DashboardScreen #footer-left {
         width: 1fr;
-        background: #ffd700;
-        color: black;
+        background: $z-bg;
+        color: $z-fg;
     }
 
     DashboardScreen #footer-right {
         width: 1fr;
         text-align: right;
-        background: #ffd700;
-        color: black;
+        background: $z-bg;
+        color: $z-fg;
     }
     """
 

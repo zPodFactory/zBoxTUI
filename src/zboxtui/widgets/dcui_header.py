@@ -11,8 +11,8 @@ class DCUIHeader(Widget):
     DEFAULT_CSS = """
     DCUIHeader {
         layout: horizontal;
-        background: #5a5a5a;
-        color: white;
+        background: $z-panel;
+        color: $z-fg;
         height: 1;
         width: 100%;
     }
