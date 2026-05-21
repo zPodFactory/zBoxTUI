@@ -54,6 +54,7 @@ class MenuScreen(Screen):
 
     BINDINGS = [
         ("escape", "logout", "Log Out"),
+        ("q", "logout", "Log Out"),
     ]
 
     DEFAULT_CSS = """

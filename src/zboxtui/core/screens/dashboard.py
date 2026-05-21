@@ -24,6 +24,7 @@ class DashboardScreen(Screen):
     BINDINGS = [
         ("f2", "customize", "Customize System"),
         ("f12", "shutdown", "Shutdown"),
+        ("q", "app.quit", "Quit"),
     ]
 
     DEFAULT_CSS = """

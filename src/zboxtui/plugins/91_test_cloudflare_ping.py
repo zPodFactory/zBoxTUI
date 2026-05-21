@@ -34,6 +34,7 @@ class CloudflarePingDialog(ModalScreen[None]):
     BINDINGS = [
         Binding("escape", "close", "Close", show=False),
         Binding("enter", "close", "Close", show=False),
+        Binding("q", "close", "Close", show=False),
         Binding("r", "retest", "Retest", show=False),
     ]
 

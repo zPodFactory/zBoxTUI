@@ -144,6 +144,7 @@ class LoginDialog(ModalScreen[bool | None]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=False),
+        Binding("q", "cancel", "Cancel", show=False),
     ]
 
     DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="LoginDialog", width=45) + """
@@ -307,6 +308,7 @@ class PasswordDialog(ModalScreen[bool]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=False),
+        Binding("q", "cancel", "Cancel", show=False),
     ]
 
     DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="PasswordDialog", width=45) + """
@@ -478,6 +480,7 @@ class MessageDialog(ModalScreen[bool]):
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=False),
         Binding("enter", "confirm", "OK", show=False),
+        Binding("q", "cancel", "Cancel", show=False),
     ]
 
     DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="MessageDialog", width=50) + """
@@ -604,6 +607,7 @@ class NetworkTestDialog(ModalScreen[None]):
     BINDINGS = [
         Binding("escape", "close", "Close", show=False),
         Binding("enter", "close", "Close", show=False),
+        Binding("q", "close", "Close", show=False),
         Binding("r", "retest", "Retest", show=False),
     ]
 
@@ -767,6 +771,7 @@ class TestDialog(ModalScreen[None]):
     BINDINGS = [
         Binding("escape", "close", "Close", show=False),
         Binding("enter", "close", "Close", show=False),
+        Binding("q", "close", "Close", show=False),
     ]
 
     DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="TestDialog", width=70) + """
@@ -906,6 +911,7 @@ class SystemLogsDialog(ModalScreen[None]):
     BINDINGS = [
         Binding("escape", "close", "Close", show=False),
         Binding("enter", "close", "Close", show=False),
+        Binding("q", "close", "Close", show=False),
         Binding("r", "refresh", "Refresh", show=False),
         Binding("up", "scroll_up", "Scroll Up", show=False),
         Binding("down", "scroll_down", "Scroll Down", show=False),
@@ -1084,6 +1090,7 @@ class ZBoxLogsDialog(ModalScreen[None]):
     BINDINGS = [
         Binding("escape", "close", "Close", show=False),
         Binding("enter", "close", "Close", show=False),
+        Binding("q", "close", "Close", show=False),
         Binding("r", "refresh", "Refresh", show=False),
         Binding("up", "scroll_up", "Scroll Up", show=False),
         Binding("down", "scroll_down", "Scroll Down", show=False),
@@ -1228,6 +1235,7 @@ class NetworkInterfaceDialog(ModalScreen[str | None]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=False),
+        Binding("q", "cancel", "Cancel", show=False),
         Binding("up", "cursor_up", "Up", show=False),
         Binding("down", "cursor_down", "Down", show=False),
         Binding("enter", "select", "Select", show=False),
@@ -1346,6 +1354,7 @@ class NetworkConfigDialog(ModalScreen[bool]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=False),
+        Binding("q", "cancel", "Cancel", show=False),
         Binding("tab", "focus_next", "Next Field", show=False),
         Binding("shift+tab", "focus_previous", "Previous Field", show=False),
     ]

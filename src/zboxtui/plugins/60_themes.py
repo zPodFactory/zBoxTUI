@@ -31,6 +31,7 @@ class ThemeDialog(ModalScreen[None]):
 
     BINDINGS = [
         Binding("escape", "close", "Close", show=False),
+        Binding("q", "close", "Close", show=False),
         Binding("enter", "select", "Select", show=False),
         Binding("up", "move_up", "Up", show=False),
         Binding("down", "move_down", "Down", show=False),
