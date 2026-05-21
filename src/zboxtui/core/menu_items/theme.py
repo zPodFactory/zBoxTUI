@@ -1,4 +1,10 @@
-"""Plugin: switch between the shipped Textual themes (catppuccin, esxi)."""
+"""Theme selection menu item handler.
+
+The dialog lives here rather than in core/widgets/dcui_dialog.py because
+it's tightly coupled to the theme registry and the config-file persistence
+in core/utils/config.write_theme(). Keeping it next to its handler keeps
+the dependency chain local.
+"""
 
 from __future__ import annotations
 
@@ -10,18 +16,15 @@ from textual.containers import Container, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
-from zboxtui.core.themes import all_themes
-from zboxtui.core.utils.config import write_theme
-from zboxtui.core.utils.logging import get_logger
-from zboxtui.core.widgets import DCUI_DIALOG_CSS, MessageDialog
+from ..themes import all_themes
+from ..utils.config import write_theme
+from ..utils.logging import get_logger
+from ..widgets.dcui_dialog import DCUI_DIALOG_CSS, MessageDialog
 
 if TYPE_CHECKING:
-    from zboxtui.app import ZBoxTUI
+    from ...app import ZBoxTUI
 
-MENU_LABEL = "Change Theme"
-MENU_DESCRIPTION = "Switch between the catppuccin and esxi color schemes."
-
-log = get_logger("plugin.themes")
+log = get_logger("menu.theme")
 
 
 class ThemeDialog(ModalScreen[None]):
@@ -83,7 +86,7 @@ class ThemeDialog(ModalScreen[None]):
         with Container(id="dialog-outer"):
             with Vertical(id="dialog-header"):
                 yield Static("")
-                yield Static("Change Theme", id="dialog-title")
+                yield Static("Configure Theme", id="dialog-title")
                 yield Static("")
                 yield Static("Select a color theme (live preview)", id="dialog-subtitle")
                 yield Static("")
@@ -161,6 +164,7 @@ class ThemeDialog(ModalScreen[None]):
         self.dismiss()
 
 
-def show_dialog(app: ZBoxTUI) -> None:
-    log.info("Opening Theme Selector dialog")
+def show_theme_dialog(app: ZBoxTUI) -> None:
+    """Open the theme selector dialog."""
+    log.info("Opening Configure Theme dialog")
     app.push_screen(ThemeDialog())

@@ -31,6 +31,10 @@ def build_menu_items() -> tuple[list[MenuEntry], dict[str, Callable[[ZBoxTUI], N
 
     items.append(MenuGroupHeader("General"))
     for i, core_item in enumerate(CORE_MENU_ITEMS):
+        if core_item is None:
+            # Sentinel for a blank row between sub-groups inside General.
+            items.append(None)
+            continue
         action_id = f"core_{i}"
         items.append(MenuItem(core_item.label, core_item.description, action_id))
         handlers[action_id] = core_item.handler
