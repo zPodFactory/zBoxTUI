@@ -43,7 +43,7 @@ class GooglePingDialog(ModalScreen[None]):
     }
 
     GooglePingDialog .test-label {
-        width: 25;
+        width: 28;
         color: $z-fg;
     }
 

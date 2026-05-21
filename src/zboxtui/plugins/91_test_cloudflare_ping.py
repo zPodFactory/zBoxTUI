@@ -43,7 +43,7 @@ class CloudflarePingDialog(ModalScreen[None]):
     }
 
     CloudflarePingDialog .test-label {
-        width: 25;
+        width: 28;
         color: $z-fg;
     }
 
