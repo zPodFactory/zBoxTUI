@@ -9,6 +9,7 @@ import time
 from collections import deque
 from typing import TYPE_CHECKING
 
+from rich.spinner import Spinner
 from rich.text import Text
 from textual import on, work
 from textual.app import ComposeResult
@@ -16,7 +17,6 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import ModalScreen
-from textual.timer import Timer
 from textual.widget import Widget
 from textual.widgets import Input, Sparkline, Static
 
@@ -34,6 +34,11 @@ from ..utils.system import (
 
 # 1 GiB in bytes - memory and storage are reported in GB (1024-based).
 _GIB = 1024**3
+
+# Refresh rate for inline Rich Spinner animations. Textual doesn't auto-refresh
+# Static widgets when their renderable is animated, so spinner-bearing Statics
+# set this on auto_refresh while spinning and clear it (= None) when done.
+_SPINNER_REFRESH = 1 / 15
 
 if TYPE_CHECKING:
     from textual.events import Key
@@ -140,8 +145,6 @@ class LoginDialog(ModalScreen[bool | None]):
         Binding("escape", "cancel", "Cancel", show=False),
     ]
 
-    SPINNER_CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-
     DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="LoginDialog", width=45) + """
     LoginDialog .form-row {
         height: 1;
@@ -203,8 +206,6 @@ class LoginDialog(ModalScreen[bool | None]):
     ) -> None:
         super().__init__(name=name, id=id, classes=classes)
         self._hostname = hostname
-        self._spinner_index = 0
-        self._spinner_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
         with Container(id="dialog-outer"):
@@ -260,23 +261,14 @@ class LoginDialog(ModalScreen[bool | None]):
     def _start_spinner(self) -> None:
         spinner = self.query_one("#spinner", Static)
         spinner.remove_class("--hidden")
-        self._spinner_index = 0
-        self._update_spinner()
-        self._spinner_timer = self.set_interval(0.1, self._update_spinner)
+        spinner.update(Spinner("dots"))
+        spinner.auto_refresh = _SPINNER_REFRESH
 
     def _stop_spinner(self) -> None:
-        if self._spinner_timer is not None:
-            self._spinner_timer.stop()
-            self._spinner_timer = None
         spinner = self.query_one("#spinner", Static)
+        spinner.auto_refresh = None
         spinner.add_class("--hidden")
         spinner.update("")
-
-    def _update_spinner(self) -> None:
-        spinner = self.query_one("#spinner", Static)
-        char = self.SPINNER_CHARS[self._spinner_index % len(self.SPINNER_CHARS)]
-        spinner.update(char)
-        self._spinner_index += 1
 
     @work(thread=True)
     def _verify_password(self, password: str) -> None:
@@ -605,8 +597,6 @@ class NetworkTestDialog(ModalScreen[None]):
 
     app: ZBoxTUI
 
-    # Braille frames for the per-row "currently testing" spinner.
-    _SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
     # Placeholder shown on rows whose test has not started yet.
     _PENDING_LABEL = "Waiting"
 
@@ -653,9 +643,6 @@ class NetworkTestDialog(ModalScreen[None]):
     ) -> None:
         super().__init__(name=name, id=id, classes=classes)
         self._gateway = get_default_gateway()
-        # The status row currently being tested (animated by the spinner timer).
-        self._active_status: Static | None = None
-        self._spinner_index = 0
 
     def compose(self) -> ComposeResult:
         with Container(id="dialog-outer"):
@@ -701,29 +688,18 @@ class NetworkTestDialog(ModalScreen[None]):
     def on_mount(self) -> None:
         """Start network tests on mount and take debug screenshot."""
         self.app.save_debug_screenshot("network_test_dialog")
-        # Animate the spinner on whichever row is currently being tested.
-        self.set_interval(0.1, self._advance_spinner)
         self._run_tests()
-
-    def _advance_spinner(self) -> None:
-        """Advance the spinner on the row currently under test, if any."""
-        if self._active_status is None:
-            return
-        self._spinner_index = (self._spinner_index + 1) % len(self._SPINNER_FRAMES)
-        self._active_status.update(self._SPINNER_FRAMES[self._spinner_index])
 
     def _begin_test(self, status: Static) -> None:
         """Mark a status row as the one currently being tested (spinning)."""
         status.remove_class("--success", "--failure")
         status.add_class("--pending")
-        self._spinner_index = 0
-        status.update(self._SPINNER_FRAMES[0])
-        self._active_status = status
+        status.update(Spinner("dots"))
+        status.auto_refresh = _SPINNER_REFRESH
 
     def _finish_test(self, status: Static, success: bool, message: str) -> None:
         """Mark a status row with its final result."""
-        if self._active_status is status:
-            self._active_status = None
+        status.auto_refresh = None
         status.remove_class("--pending")
         status.add_class("--success" if success else "--failure")
         status.update(message)
@@ -752,8 +728,6 @@ class NetworkTestDialog(ModalScreen[None]):
         success, message = await ping_host("1.1.1.1")
         self._finish_test(cloudflare_status, success, message)
 
-        # Update instruction text
-        self._active_status = None
         instruction = self.query_one("#dialog-subtitle", Static)
         instruction.update("Network connectivity test complete.")
 
