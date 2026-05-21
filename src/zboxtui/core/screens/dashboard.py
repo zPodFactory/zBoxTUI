@@ -36,7 +36,7 @@ class DashboardScreen(Screen):
 
     DashboardScreen #dashboard-header {
         background: $z-panel;
-        color: $z-fg;
+        color: $z-panel-fg;
         row-span: 1;
         padding: 1 2;
         border-top: solid $z-border;

@@ -59,10 +59,10 @@ DCUI_DIALOG_CSS = """
         height: auto;
     }}
 
-    /* Grey header section with top and side borders */
+    /* Header section: sits on $z-panel, so uses panel foreground colors. */
     {dialog_class} #dialog-header {{
         background: $z-panel;
-        color: $z-fg;
+        color: $z-panel-fg;
         height: auto;
         padding: 0 2;
         border-top: solid $z-border;
@@ -77,7 +77,7 @@ DCUI_DIALOG_CSS = """
     }}
 
     {dialog_class} #dialog-subtitle {{
-        color: $z-fg-dim;
+        color: $z-panel-fg-dim;
         text-align: center;
         height: auto;
     }}

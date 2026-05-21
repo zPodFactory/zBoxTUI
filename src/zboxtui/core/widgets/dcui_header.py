@@ -12,7 +12,7 @@ class DCUIHeader(Widget):
     DCUIHeader {
         layout: horizontal;
         background: $z-panel;
-        color: $z-fg;
+        color: $z-panel-fg;
         height: 1;
         width: 100%;
     }

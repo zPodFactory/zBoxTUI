@@ -9,10 +9,11 @@ from textual.app import App
 
 from .core.screens.dashboard import DashboardScreen
 from .core.screens.menu import MenuScreen
+from .core.themes import DEFAULT_THEME_NAME, all_themes
+from .core.utils.config import get_config
 from .core.utils.logging import get_logger
 from .core.utils.system import get_system_info
 from .core.widgets.dcui_dialog import LoginDialog, MessageDialog
-from .theme import select_palette
 
 log = get_logger("app")
 
@@ -28,62 +29,73 @@ class ZBoxTUI(App):
         "menu": MenuScreen,
     }
 
-    def __init__(self, debug_svg: bool = False, palette: str = "auto") -> None:
-        # Must be set before super().__init__(), which calls get_css_variables().
-        self._palette_name, self._palette = select_palette(palette)
+    def __init__(self, debug_svg: bool = False, theme_override: str | None = None) -> None:
         super().__init__()
         self._authenticated = False
         self.debug_svg = debug_svg
         self._menu_handlers: dict[str, Callable[[ZBoxTUI], None]] = {}
+
+        # Themes must be registered before any CSS is parsed — otherwise
+        # references to $z-bg and friends in styles.tcss/DEFAULT_CSS resolve
+        # against Textual's built-in themes only and fail.
+        for theme in all_themes():
+            self.register_theme(theme)
+
+        configured = theme_override or get_config().theme
+        try:
+            self.theme = configured
+            log.info("Theme applied: %s", configured)
+        except Exception:
+            log.exception(
+                "Unknown theme '%s', falling back to '%s'", configured, DEFAULT_THEME_NAME
+            )
+            self.theme = DEFAULT_THEME_NAME
+
         log.info(
-            "zBoxTUI application initialized (debug_svg=%s, palette=%s)",
+            "zBoxTUI application initialized (debug_svg=%s, theme=%s)",
             debug_svg,
-            self._palette_name,
+            self.theme,
         )
 
-    def get_css_variables(self) -> dict[str, str]:
-        """Inject the active palette as CSS variables ($z-bg, $z-accent, ...)."""
-        variables = super().get_css_variables()
-        variables.update(self._palette)
-        return variables
+    def on_mount(self) -> None:
+        """Push the dashboard once the app is ready."""
+        log.info("Application mounted, pushing dashboard screen")
+        self.push_screen("dashboard")
 
     def save_debug_screenshot(self, name: str) -> None:
-        """Save a debug screenshot if debug_svg mode is enabled."""
-        if self.debug_svg:
-            def _take_screenshot() -> None:
-                filename = f"{name}.svg"
-                self.save_screenshot(filename, path="./")
-                self.log.info(f"Debug screenshot saved: {filename}")
-                log.debug("Debug screenshot saved: %s", filename)
+        """Save an SVG screenshot if --debug-svg was passed."""
+        if not self.debug_svg:
+            return
 
-            self.call_after_refresh(_take_screenshot)
+        def _take_screenshot() -> None:
+            filename = f"{name}.svg"
+            self.save_screenshot(filename, path="./")
+            log.debug("Debug screenshot saved: %s", filename)
+
+        self.call_after_refresh(_take_screenshot)
 
     def set_menu_handlers(self, handlers: dict[str, Callable[[ZBoxTUI], None]]) -> None:
         """Register action_id → handler mappings (called by MenuScreen on mount)."""
         self._menu_handlers = handlers
         log.debug("Registered %d menu handlers", len(handlers))
 
-    def on_mount(self) -> None:
-        """Set up the initial screen."""
-        log.info("Application mounted, pushing dashboard screen")
-        self.push_screen("dashboard")
-
     def action_show_login(self) -> None:
-        """Show the login dialog."""
+        """Show the login dialog, or skip to the menu if already authenticated."""
         log.debug("action_show_login called (authenticated=%s)", self._authenticated)
         if self._authenticated:
             log.info("User already authenticated, pushing menu screen")
             self.push_screen("menu")
-        else:
-            info = get_system_info()
-            log.info("Showing login dialog for host: %s", info.hostname)
-            self.push_screen(
-                LoginDialog(hostname=info.hostname),
-                callback=self._handle_login,
-            )
+            return
+
+        info = get_system_info()
+        log.info("Showing login dialog for host: %s", info.hostname)
+        self.push_screen(
+            LoginDialog(hostname=info.hostname),
+            callback=self._handle_login,
+        )
 
     def _handle_login(self, result: bool | None) -> None:
-        """Handle login dialog result. LoginDialog verified the password itself."""
+        """LoginDialog already validated; just gate access to the menu."""
         if result is None:
             log.debug("Login dialog cancelled by user")
             return

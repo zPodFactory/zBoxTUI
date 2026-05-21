@@ -1,53 +1,27 @@
-/* zBoxTUI - ESXi DCUI Theme */
-/* Colors use $z-* CSS variables; concrete values come from theme.py and are */
-/* chosen at startup: Catppuccin Mocha (truecolor) or 16-color ANSI (console). */
+/* zBoxTUI - DCUI base styles.
+ * Color values come from the active Textual theme (see core/themes.py).
+ * - $z-bg / $z-fg            : main content background and its foreground
+ * - $z-panel / $z-panel-fg   : header/footer/detail backgrounds and their fg
+ * - $z-accent / $z-accent-fg : selection and highlight colors
+ */
 
-/* Base app styling */
 Screen {
     background: $z-bg;
     scrollbar-background: $z-panel;
     scrollbar-color: $z-scrollbar;
 }
 
-/* Modal screens should have black background to dim underlying content */
 ModalScreen {
     background: $z-crust;
 }
 
-/* Remove default focus styling - but not for dialog sections */
-Static:focus {
+/* Remove default focus borders Textual adds; widget DEFAULT_CSS draws its own. */
+Static:focus, Container:focus, Vertical:focus, Horizontal:focus, Input:focus {
     text-style: none;
     border: none;
 }
 
-Container:focus {
-    border: none;
-}
-
-Vertical:focus {
-    border: none;
-}
-
-Horizontal:focus {
-    border: none;
-}
-
-Input:focus {
-    border: none;
-}
-
-/* Override default scrollbar colors */
-App {
-    scrollbar-background: $z-panel;
-    scrollbar-color: $z-scrollbar;
-}
-
-Vertical {
-    scrollbar-background: $z-panel;
-    scrollbar-color: $z-scrollbar;
-}
-
-Horizontal {
+App, Vertical, Horizontal {
     scrollbar-background: $z-panel;
     scrollbar-color: $z-scrollbar;
 }
@@ -62,16 +36,11 @@ Horizontal {
 #menu-header {
     layout: horizontal;
     background: $z-panel;
-    color: $z-fg;
+    color: $z-panel-fg;
     height: 1;
 }
 
-#menu-header-left {
-    width: 1fr;
-    padding: 0 1;
-}
-
-#menu-header-right {
+#menu-header-left, #menu-header-right {
     width: 1fr;
     padding: 0 1;
 }
@@ -94,19 +63,23 @@ Horizontal {
     width: 1fr;
     padding: 1 2;
     background: $z-panel;
-    color: $z-fg;
+    color: $z-panel-fg;
 }
 
 #menu-footer {
     layout: horizontal;
     background: $z-panel;
-    color: $z-fg;
+    color: $z-panel-fg;
     height: 1;
 }
 
-#menu-footer-left {
+#menu-footer-left, #menu-footer-right {
     width: 1fr;
     padding: 0 1;
+}
+
+#menu-footer-right {
+    text-align: right;
 }
 
 #menu-footer-center {
@@ -115,13 +88,7 @@ Horizontal {
     text-align: center;
 }
 
-#menu-footer-right {
-    width: 1fr;
-    padding: 0 1;
-    text-align: right;
-}
-
-/* DCUI Menu widget */
+/* DCUI menu widget */
 DCUIMenu {
     background: $z-bg;
     color: $z-fg;
@@ -139,8 +106,6 @@ DCUIMenu > .menu-item.--selected {
     background: $z-accent;
     color: $z-accent-fg;
 }
-
-/* Modal dialogs - overlay styling handled in widget DEFAULT_CSS */
 
 /* Footer key hints */
 .key-hint {

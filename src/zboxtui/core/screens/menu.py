@@ -81,7 +81,7 @@ class MenuScreen(Screen):
         padding: 0 1;
         text-align: right;
         background: $z-panel;
-        color: $z-fg;
+        color: $z-panel-fg;
         border-top: solid $z-border;
         border-right: solid $z-border;
     }
@@ -103,7 +103,7 @@ class MenuScreen(Screen):
     MenuScreen #menu-detail-container {
         width: 1fr;
         background: $z-panel;
-        color: $z-fg;
+        color: $z-panel-fg;
         padding: 1 2 0 2;
         border-right: solid $z-border;
         border-bottom: solid $z-border;
@@ -119,7 +119,7 @@ class MenuScreen(Screen):
     }
 
     MenuScreen #detail-description {
-        color: $z-fg-dim;
+        color: $z-panel-fg-dim;
     }
 
     MenuScreen #menu-footer {
@@ -127,7 +127,7 @@ class MenuScreen(Screen):
         height: 1;
         width: 100%;
         background: $z-panel;
-        color: $z-fg;
+        color: $z-panel-fg;
         dock: bottom;
     }
 
