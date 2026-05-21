@@ -18,7 +18,7 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widget import Widget
-from textual.widgets import Input, Sparkline, Static
+from textual.widgets import Input, Static
 
 from ..utils.logging import get_logger
 from ..utils.system import (
@@ -31,6 +31,7 @@ from ..utils.system import (
     read_cpu_times,
     read_net_bytes,
 )
+from .bar_chart import BarChart
 
 # 1 GiB in bytes - memory and storage are reported in GB (1024-based).
 _GIB = 1024**3
@@ -1926,18 +1927,11 @@ class SystemStatsDialog(ModalScreen[None]):
         content-align: right middle;
     }
 
-    SystemStatsDialog Sparkline {
+    SystemStatsDialog BarChart {
         width: 1fr;
         height: 3;
         margin: 0 2;
-    }
-
-    SystemStatsDialog Sparkline > .sparkline--max-color {
         color: $z-accent;
-    }
-
-    SystemStatsDialog Sparkline > .sparkline--min-color {
-        color: $z-fg-faint;
     }
     """
 
@@ -1997,11 +1991,11 @@ class SystemStatsDialog(ModalScreen[None]):
                 yield Static("Network I/O", classes="stats-section")
                 with Horizontal(classes="net-row"):
                     yield Static("RX", classes="stats-label")
-                    yield Sparkline(list(self._rx_history), id="rx-spark")
+                    yield BarChart(list(self._rx_history), id="rx-spark")
                     yield Static("--", classes="stats-value", id="rx-value")
                 with Horizontal(classes="net-row"):
                     yield Static("TX", classes="stats-label")
-                    yield Sparkline(list(self._tx_history), id="tx-spark")
+                    yield BarChart(list(self._tx_history), id="tx-spark")
                     yield Static("--", classes="stats-value", id="tx-value")
 
                 yield Static("")  # Spacer before footer
@@ -2051,8 +2045,8 @@ class SystemStatsDialog(ModalScreen[None]):
         self._prev_time = now
         self._rx_history.append(rx_rate)
         self._tx_history.append(tx_rate)
-        self.query_one("#rx-spark", Sparkline).data = list(self._rx_history)
-        self.query_one("#tx-spark", Sparkline).data = list(self._tx_history)
+        self.query_one("#rx-spark", BarChart).data = list(self._rx_history)
+        self.query_one("#tx-spark", BarChart).data = list(self._tx_history)
         self.query_one("#rx-value", Static).update(f"{format_size(rx_rate)}/s")
         self.query_one("#tx-value", Static).update(f"{format_size(tx_rate)}/s")
 

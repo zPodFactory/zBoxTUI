@@ -1,5 +1,6 @@
 """Widget modules for zBoxTUI - importable by plugins."""
 
+from .bar_chart import BarChart
 from .dcui_dialog import (
     DCUI_DIALOG_CSS,
     LoginDialog,
@@ -20,6 +21,8 @@ from .dcui_header import DCUIHeader
 from .dcui_menu import DCUIMenu, MenuEntry, MenuGroupHeader, MenuItem
 
 __all__ = [
+    # Charts
+    "BarChart",
     # CSS templates
     "DCUI_DIALOG_CSS",
     # Utility functions
