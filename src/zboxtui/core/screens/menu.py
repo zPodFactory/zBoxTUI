@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from textual import on
@@ -10,62 +11,40 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
-from ..widgets.dcui_menu import DCUIMenu, MenuItem
+from ... import __version__
+from ...plugin_loader import discover_plugins
+from ..menu_items import CORE_MENU_ITEMS
+from ..widgets.dcui_menu import DCUIMenu, MenuEntry, MenuGroupHeader, MenuItem
 
 if TYPE_CHECKING:
-    from ..app import ZBoxTUI
+    from ...app import ZBoxTUI
 
-# Menu items with descriptions
-MENU_ITEMS: list[MenuItem | None] = [
-    MenuItem(
-        "Configure Password",
-        "Change the root password for this system.",
-        "configure_password",
-    ),
-    MenuItem(
-        "Configure Network",
-        "Configure network interfaces, IP addresses, DNS, and routing.",
-        "configure_network",
-    ),
-    MenuItem(
-        "Restart Network",
-        "Restart all network services and apply configuration changes.",
-        "restart_network",
-    ),
-    MenuItem(
-        "Test Network",
-        "Test network connectivity by pinging the gateway and DNS servers.",
-        "test_network",
-    ),
-    None,  # Separator
-    MenuItem(
-        "Configure Packages",
-        "Install, update, or remove system packages.",
-        "configure_packages",
-    ),
-    None,  # Separator
-    MenuItem(
-        "View System Logs",
-        "View and search through system log files.",
-        "view_system_logs",
-    ),
-    MenuItem(
-        "View zBox Logs",
-        "View zBox configuration file.",
-        "view_zbox_logs",
-    ),
-    MenuItem(
-        "View System Stats",
-        "View live CPU, memory, storage, and network metrics.",
-        "view_system_stats",
-    ),
-    None,  # Separator
-    MenuItem(
-        "Test Dialog",
-        "Display a template dialog for testing modal styling and layout.",
-        "test_dialog",
-    ),
-]
+
+def build_menu_items() -> tuple[list[MenuEntry], dict[str, Callable[[ZBoxTUI], None]]]:
+    """Compose the menu list and the action_id → handler mapping.
+
+    Built-in items render under a "General" group; discovered plugins render
+    under a "Plugins" group separated by a blank row.
+    """
+    items: list[MenuEntry] = []
+    handlers: dict[str, Callable[[ZBoxTUI], None]] = {}
+
+    items.append(MenuGroupHeader("General"))
+    for i, core_item in enumerate(CORE_MENU_ITEMS):
+        action_id = f"core_{i}"
+        items.append(MenuItem(core_item.label, core_item.description, action_id))
+        handlers[action_id] = core_item.handler
+
+    plugins = discover_plugins()
+    if plugins:
+        items.append(None)
+        items.append(MenuGroupHeader("Plugins"))
+        for i, plugin in enumerate(plugins):
+            action_id = f"plugin_{i}"
+            items.append(MenuItem(plugin.label, plugin.description, action_id))
+            handlers[action_id] = plugin.handler
+
+    return items, handlers
 
 
 class MenuScreen(Screen):
@@ -176,58 +155,49 @@ class MenuScreen(Screen):
     ) -> None:
         super().__init__(name=name, id=id, classes=classes)
         self._current_item: MenuItem | None = None
+        self._menu_items, self._handlers = build_menu_items()
 
     def compose(self) -> ComposeResult:
-        # Header with screen title and selected item (gray with white border top)
+        first_item: MenuItem | None = next(
+            (item for item in self._menu_items if isinstance(item, MenuItem)),
+            None,
+        )
+        first_label = first_item.label if first_item else ""
+        first_desc = first_item.description if first_item else ""
+
         with Horizontal(id="menu-header"):
             yield Static("System Configuration", id="header-left")
-            yield Static("Configure Password", id="header-right")
+            yield Static(first_label, id="header-right")
 
-        # Main body with menu and detail panel
         with Horizontal(id="menu-body"):
-            # Left panel - yellow with menu
             with Vertical(id="menu-list-container"):
-                yield DCUIMenu(MENU_ITEMS, id="main-menu")
+                yield DCUIMenu(self._menu_items, id="main-menu")
 
-            # Right panel - gray with details and footer
             with Vertical(id="menu-detail-container"):
                 with Container(id="detail-content"):
-                    yield Static("Configure Password", id="detail-title")
-                    yield Static(
-                        "Change the root password for this system.",
-                        id="detail-description",
-                    )
-                # Footer keybinds at bottom of right section
+                    yield Static(first_label, id="detail-title")
+                    yield Static(first_desc, id="detail-description")
                 with Horizontal(id="menu-footer"):
                     yield Static("<Enter> Change", id="footer-left")
-                    yield Static("zBoxTUI v0.1.0", id="footer-center")
+                    yield Static(f"zBoxTUI v{__version__}", id="footer-center")
                     yield Static("<Esc> Log Out", id="footer-right")
 
     def on_mount(self) -> None:
-        """Focus the menu on mount and take debug screenshot."""
+        self.app.set_menu_handlers(self._handlers)
         self.query_one("#main-menu", DCUIMenu).focus()
         self.app.save_debug_screenshot("menu")
 
     @on(DCUIMenu.Highlighted)
     def on_menu_highlighted(self, event: DCUIMenu.Highlighted) -> None:
-        """Update detail panel when menu item is highlighted."""
         self._current_item = event.item
 
-        # Update header
-        header_right = self.query_one("#header-right", Static)
-        header_right.update(event.item.label)
-
-        # Update detail panel
-        title = self.query_one("#detail-title", Static)
-        description = self.query_one("#detail-description", Static)
-        title.update(event.item.label)
-        description.update(event.item.description)
+        self.query_one("#header-right", Static).update(event.item.label)
+        self.query_one("#detail-title", Static).update(event.item.label)
+        self.query_one("#detail-description", Static).update(event.item.description)
 
     @on(DCUIMenu.Selected)
     def on_menu_selected(self, event: DCUIMenu.Selected) -> None:
-        """Handle menu item selection."""
         self.app.handle_menu_action(event.item.action)
 
     def action_logout(self) -> None:
-        """Handle ESC - log out and return to dashboard."""
         self.app.pop_screen()

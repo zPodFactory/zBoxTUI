@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from zboxtui.app import ZBoxTUI
-from zboxtui.widgets.dcui_dialog import (
+from zboxtui.core.widgets.dcui_dialog import (
     LoginDialog,
     MessageDialog,
     NetworkTestDialog,

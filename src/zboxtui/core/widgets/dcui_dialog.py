@@ -37,7 +37,7 @@ _GIB = 1024**3
 if TYPE_CHECKING:
     from textual.events import Key
 
-    from ..app import ZBoxTUI
+    from ...app import ZBoxTUI
 
 log = get_logger("dialogs")
 

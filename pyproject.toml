@@ -1,6 +1,6 @@
 [project]
 name = "zboxtui"
-version = "0.1.0"
+version = "0.2.0"
 description = "ESXi DCUI-style TUI for Debian system configuration"
 readme = "README.md"
 requires-python = ">=3.11"

@@ -9,10 +9,11 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
+from ... import __version__
 from ..utils.system import get_system_info
 
 if TYPE_CHECKING:
-    from ..app import ZBoxTUI
+    from ...app import ZBoxTUI
 
 
 class DashboardScreen(Screen):
@@ -85,7 +86,7 @@ class DashboardScreen(Screen):
 
         # Header section with system info (gray with white border top/left/right)
         with Vertical(id="dashboard-header"):
-            yield Static(f"zBoxTUI v0.1.0 ({info.os_name} {info.os_version})")
+            yield Static(f"zBoxTUI v{__version__} ({info.os_name} {info.os_version})")
             yield Static("")
             yield Static(info.hostname)
             yield Static("")

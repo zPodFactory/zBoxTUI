@@ -3,7 +3,7 @@
 import pytest
 
 from zboxtui.app import ZBoxTUI
-from zboxtui.utils.system import get_system_info
+from zboxtui.core.utils.system import get_system_info
 
 
 def test_system_info():

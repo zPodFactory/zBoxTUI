@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 
-from .utils.logging import get_logger
+from .core.utils.logging import get_logger
 
 log = get_logger("theme")
 
