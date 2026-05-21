@@ -29,9 +29,11 @@ def main() -> None:
     parser.add_argument(
         "--theme",
         type=str,
-        choices=["catppuccin", "esxi"],
         default=None,
-        help="Override the configured theme for this run (catppuccin or esxi)",
+        metavar="NAME",
+        help="Override the configured theme for this run. Built-in themes: "
+        "catppuccin-mocha (default), vmware-esxi, nord, gruvbox, tokyo-night, "
+        "textual-dark, atom-one-dark.",
     )
     args = parser.parse_args()
 

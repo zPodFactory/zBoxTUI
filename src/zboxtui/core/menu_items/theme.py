@@ -4,6 +4,13 @@ The dialog lives here rather than in core/widgets/dcui_dialog.py because
 it's tightly coupled to the theme registry and the config-file persistence
 in core/utils/config.write_theme(). Keeping it next to its handler keeps
 the dependency chain local.
+
+UX model (matches standard form behavior):
+    * Up/Down (or k/j) move the cursor only — no live theme change.
+    * Space toggles the cursor row as the selected theme: the [*] marker
+      moves there and the theme applies live so you can see it.
+    * Enter persists the currently-selected theme to the config file.
+    * Esc/Q reverts to whatever theme was active when the dialog opened.
 """
 
 from __future__ import annotations
@@ -28,14 +35,15 @@ log = get_logger("menu.theme")
 
 
 class ThemeDialog(ModalScreen[None]):
-    """Pick from the registered themes and apply live."""
+    """Pick from the registered themes; preview with Space, save with Enter."""
 
     app: ZBoxTUI
 
     BINDINGS = [
         Binding("escape", "close", "Close", show=False),
         Binding("q", "close", "Close", show=False),
-        Binding("enter", "select", "Select", show=False),
+        Binding("space", "toggle_select", "Select", show=False),
+        Binding("enter", "save", "Save", show=False),
         Binding("up", "move_up", "Up", show=False),
         Binding("down", "move_down", "Down", show=False),
         Binding("k", "move_up", "Up", show=False),
@@ -53,12 +61,12 @@ class ThemeDialog(ModalScreen[None]):
         color: $z-fg;
     }
 
-    ThemeDialog .theme-item.--selected {
+    ThemeDialog .theme-item.--cursor {
         background: $z-accent;
         color: $z-accent-fg;
     }
 
-    ThemeDialog .current-label {
+    ThemeDialog .hint {
         height: 1;
         margin-top: 1;
         color: $z-fg-faint;
@@ -70,14 +78,16 @@ class ThemeDialog(ModalScreen[None]):
         super().__init__()
         self._themes = [t.name for t in all_themes()]
         # Snapshot the theme that was active when the dialog opened so we can
-        # restore it if the user previews a different one then cancels.
+        # restore it if the user previews different ones then cancels.
         self._initial_theme: str = ""
         try:
             current = next(i for i, name in enumerate(self._themes) if name == self.app.theme)
         except (StopIteration, AttributeError):
             current = 0
-        self._selected_index = current
-        self._current_index = current
+        # _cursor_index: which row the user is highlighting (Up/Down).
+        # _applied_index: which row is currently applied to the app (Space).
+        self._cursor_index = current
+        self._applied_index = current
 
     def on_mount(self) -> None:
         self._initial_theme = self.app.theme
@@ -88,79 +98,102 @@ class ThemeDialog(ModalScreen[None]):
                 yield Static("")
                 yield Static("Configure Theme", id="dialog-title")
                 yield Static("")
-                yield Static("Select a color theme (live preview)", id="dialog-subtitle")
+                yield Static(
+                    "Up/Down to navigate, Space to preview, Enter to save",
+                    id="dialog-subtitle",
+                )
                 yield Static("")
             with Vertical(id="dialog-body"):
                 for i, name in enumerate(self._themes):
-                    prefix = "[*]" if i == self._current_index else "[ ]"
-                    classes = "theme-item"
-                    if i == self._selected_index:
-                        classes += " --selected"
                     yield Static(
-                        f"{prefix} {name}",
-                        classes=classes,
+                        self._format_row(i, name),
+                        classes=self._classes_for_row(i),
                         id=f"theme-{i}",
                         markup=False,
                     )
                 yield Static(
-                    "Tip: changes preview live. Enter applies; Esc cancels.",
-                    classes="current-label",
+                    "Esc cancels and reverts to the previous theme.",
+                    classes="hint",
                 )
                 yield Static("")
-                yield Static("<Enter> Apply    <Esc> Cancel", id="dialog-footer")
+                yield Static(
+                    "<Space> Preview    <Enter> Save    <Esc> Cancel",
+                    id="dialog-footer",
+                )
+
+    def _format_row(self, index: int, name: str) -> str:
+        prefix = "[*]" if index == self._applied_index else "[ ]"
+        return f"{prefix} {name}"
+
+    def _classes_for_row(self, index: int) -> str:
+        classes = "theme-item"
+        if index == self._cursor_index:
+            classes += " --cursor"
+        return classes
 
     def _refresh_rows(self) -> None:
-        for i in range(len(self._themes)):
-            item = self.query_one(f"#theme-{i}", Static)
-            if i == self._selected_index:
-                item.add_class("--selected")
+        for i, name in enumerate(self._themes):
+            row = self.query_one(f"#theme-{i}", Static)
+            row.update(self._format_row(i, name))
+            if i == self._cursor_index:
+                row.add_class("--cursor")
             else:
-                item.remove_class("--selected")
+                row.remove_class("--cursor")
 
-    def _preview(self, theme_name: str) -> None:
+    def _apply(self, theme_name: str) -> None:
         try:
             self.app.theme = theme_name
         except Exception:
-            log.exception("Failed to preview theme '%s'", theme_name)
+            log.exception("Failed to apply theme '%s'", theme_name)
 
     def action_move_up(self) -> None:
-        if self._selected_index > 0:
-            self._selected_index -= 1
+        if self._cursor_index > 0:
+            self._cursor_index -= 1
             self._refresh_rows()
-            self._preview(self._themes[self._selected_index])
 
     def action_move_down(self) -> None:
-        if self._selected_index < len(self._themes) - 1:
-            self._selected_index += 1
+        if self._cursor_index < len(self._themes) - 1:
+            self._cursor_index += 1
             self._refresh_rows()
-            self._preview(self._themes[self._selected_index])
 
-    def action_select(self) -> None:
-        chosen = self._themes[self._selected_index]
-        self._preview(chosen)
-        log.info("Applying theme: %s", chosen)
+    def action_toggle_select(self) -> None:
+        """Space: live-apply the row at the cursor and move the [*] marker."""
+        chosen = self._themes[self._cursor_index]
+        if self._applied_index == self._cursor_index and self.app.theme == chosen:
+            # Already the active selection — nothing to do.
+            return
+        self._applied_index = self._cursor_index
+        self._apply(chosen)
+        self._refresh_rows()
 
-        persisted = write_theme(chosen)
-        if persisted:
+    def action_save(self) -> None:
+        """Enter: write the currently-applied theme to the config file."""
+        chosen = self._themes[self._applied_index]
+        log.info("Saving theme to config: %s", chosen)
+
+        written = write_theme(chosen)
+        if written is not None:
+            log.info("Theme persisted to %s", written)
             self.dismiss()
             return
 
-        # Apply succeeded for this session but disk write failed.
-        log.warning("Could not persist theme to config file")
+        # All candidate paths refused the write.
+        log.warning("Could not persist theme to any config path")
         self.app.push_screen(
             MessageDialog(
-                "Theme Applied",
+                "Theme Applied (Session Only)",
                 f"Theme '{chosen}' is active for this session.\n\n"
-                "The config file is not writable, so the choice won't persist "
-                "across restarts. Run zBoxTUI with --config <path> pointing at "
-                "a writable file to make it permanent.",
+                "No writable config file could be found. Set $ZBOXTUI_CONFIG "
+                "to a path you can write to, or run with --config <path>, "
+                "to make the choice persist across restarts.",
             ),
             callback=lambda _: self.dismiss(),
         )
 
     def action_close(self) -> None:
+        """Esc/Q: revert any preview and close without saving."""
         if self._initial_theme and self.app.theme != self._initial_theme:
-            self.app.theme = self._initial_theme
+            self._apply(self._initial_theme)
         self.dismiss()
 
 
