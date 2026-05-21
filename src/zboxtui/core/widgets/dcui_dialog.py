@@ -1993,6 +1993,7 @@ class SystemStatsDialog(ModalScreen[None]):
                     yield Static("RX", classes="stats-label")
                     yield BarChart(list(self._rx_history), id="rx-spark")
                     yield Static("--", classes="stats-value", id="rx-value")
+                yield Static(" ")  # Breathing room between RX and TX bars
                 with Horizontal(classes="net-row"):
                     yield Static("TX", classes="stats-label")
                     yield BarChart(list(self._tx_history), id="tx-spark")
