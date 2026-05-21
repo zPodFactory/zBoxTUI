@@ -77,7 +77,7 @@ DCUI_DIALOG_CSS = """
     }}
 
     {dialog_class} #dialog-title {{
-        color: $z-accent;
+        color: $z-title;
         text-align: center;
         height: 1;
     }}
