@@ -82,26 +82,15 @@ class ZBoxTUI(App):
                 callback=self._handle_login,
             )
 
-    def _handle_login(self, result: tuple[str, str] | None) -> None:
-        """Handle login dialog result."""
+    def _handle_login(self, result: bool | None) -> None:
+        """Handle login dialog result. LoginDialog verified the password itself."""
         if result is None:
             log.debug("Login dialog cancelled by user")
             return
-
-        username, password = result
-        log.debug("Login attempt for user: %s", username)
-        if username and password:
+        if result is True:
             self._authenticated = True
-            log.info("User '%s' authenticated successfully", username)
+            log.info("Root authenticated successfully")
             self.push_screen("menu")
-        else:
-            log.warning("Authentication failed: empty username or password")
-            self.push_screen(
-                MessageDialog(
-                    "Authentication Failed",
-                    "Please enter both username and password.",
-                ),
-            )
 
     def action_show_shutdown(self) -> None:
         """Show the shutdown confirmation dialog."""

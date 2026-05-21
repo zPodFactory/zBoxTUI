@@ -16,6 +16,7 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import ModalScreen
+from textual.timer import Timer
 from textual.widget import Widget
 from textual.widgets import Input, Sparkline, Static
 
@@ -102,14 +103,44 @@ DCUI_DIALOG_CSS = """
 """
 
 
-class LoginDialog(ModalScreen[tuple[str, str] | None]):
-    """A DCUI-style login dialog."""
+def verify_root_password(password: str) -> bool:
+    """Check whether ``password`` is the root password.
+
+    Uses ``su -c true root`` which is PAM-backed on Debian. Returns False on
+    any failure path (empty password, su missing, timeout, wrong password).
+    """
+    if not password:
+        return False
+    try:
+        result = subprocess.run(
+            ["su", "-c", "true", "root"],
+            input=f"{password}\n",
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        log.warning("Password verification timed out")
+        return False
+    except FileNotFoundError:
+        log.error("su command not found")
+        return False
+    except Exception:
+        log.exception("Error verifying root password")
+        return False
+
+
+class LoginDialog(ModalScreen[bool | None]):
+    """A DCUI-style root authentication dialog."""
 
     app: ZBoxTUI
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=False),
     ]
+
+    SPINNER_CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
     DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="LoginDialog", width=45) + """
     LoginDialog .form-row {
@@ -135,6 +166,31 @@ class LoginDialog(ModalScreen[tuple[str, str] | None]):
     LoginDialog .form-input:focus {
         background: $z-panel-focus;
     }
+
+    LoginDialog #spinner {
+        width: 3;
+        height: 1;
+        color: $z-fg-faint;
+        content-align: center middle;
+    }
+
+    LoginDialog #spinner.--hidden {
+        display: none;
+    }
+
+    LoginDialog #error-container {
+        height: auto;
+    }
+
+    LoginDialog #error-container.--hidden {
+        display: none;
+    }
+
+    LoginDialog #error-message {
+        height: 1;
+        text-align: center;
+        color: $z-error;
+    }
     """
 
     def __init__(
@@ -147,61 +203,107 @@ class LoginDialog(ModalScreen[tuple[str, str] | None]):
     ) -> None:
         super().__init__(name=name, id=id, classes=classes)
         self._hostname = hostname
+        self._spinner_index = 0
+        self._spinner_timer: Timer | None = None
 
     def compose(self) -> ComposeResult:
         with Container(id="dialog-outer"):
             with Vertical(id="dialog-header"):
-                yield Static("")  # Spacer before title
+                yield Static("")
                 yield Static("Authentication Required", id="dialog-title")
-                yield Static("")  # Spacer after title
+                yield Static("")
                 yield Static(
-                    f"Enter an authorized login name and password for {self._hostname}.",
+                    f"Enter root password for {self._hostname}.",
                     id="dialog-subtitle",
                 )
-                yield Static("")  # Spacer after subtitle
+                yield Static("")
             with Vertical(id="dialog-body"):
-                with Horizontal(classes="form-row"):
-                    yield Static("Login Name:", classes="form-label")
-                    yield Input(
-                        value="root",
-                        placeholder="username",
-                        classes="form-input",
-                        id="username-input",
-                    )
                 with Horizontal(classes="form-row"):
                     yield Static("Password:", classes="form-label")
                     yield Input(
                         password=True,
-                        placeholder="password",
+                        placeholder="root password",
                         classes="form-input",
                         id="password-input",
                     )
-                yield Static("")  # Spacer before footer
+                    yield Static("", id="spinner", classes="--hidden")
+                with Vertical(id="error-container", classes="--hidden"):
+                    yield Static("")
+                    yield Static("", id="error-message")
+                yield Static("")
                 yield Static("<Enter> OK    <Esc> Cancel", id="dialog-footer")
 
     def on_mount(self) -> None:
-        """Focus the username input on mount and take debug screenshot."""
-        self.query_one("#username-input", Input).focus()
+        self.query_one("#password-input", Input).focus()
         self.app.save_debug_screenshot("login_dialog")
 
     @on(Input.Submitted)
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle Enter key in input fields."""
-        if event.input.id == "username-input":
-            # Move to password field
-            self.query_one("#password-input", Input).focus()
-        elif event.input.id == "password-input":
-            # Submit the form
+        if event.input.id == "password-input":
             self._submit()
 
     def _submit(self) -> None:
-        """Submit the login form."""
-        username = self.query_one("#username-input", Input).value
         password = self.query_one("#password-input", Input).value
-        self.dismiss((username, password))
+        error_container = self.query_one("#error-container", Vertical)
+        error_msg = self.query_one("#error-message", Static)
+
+        if not password:
+            error_container.remove_class("--hidden")
+            error_msg.update("Error: Password is required")
+            return
+
+        error_container.add_class("--hidden")
+        self.query_one("#password-input", Input).disabled = True
+        self._start_spinner()
+        self._verify_password(password)
+
+    def _start_spinner(self) -> None:
+        spinner = self.query_one("#spinner", Static)
+        spinner.remove_class("--hidden")
+        self._spinner_index = 0
+        self._update_spinner()
+        self._spinner_timer = self.set_interval(0.1, self._update_spinner)
+
+    def _stop_spinner(self) -> None:
+        if self._spinner_timer is not None:
+            self._spinner_timer.stop()
+            self._spinner_timer = None
+        spinner = self.query_one("#spinner", Static)
+        spinner.add_class("--hidden")
+        spinner.update("")
+
+    def _update_spinner(self) -> None:
+        spinner = self.query_one("#spinner", Static)
+        char = self.SPINNER_CHARS[self._spinner_index % len(self.SPINNER_CHARS)]
+        spinner.update(char)
+        self._spinner_index += 1
+
+    @work(thread=True)
+    def _verify_password(self, password: str) -> None:
+        log.debug("Verifying root password")
+        result = verify_root_password(password)
+        self.app.call_from_thread(self._handle_verification_result, result)
+
+    def _handle_verification_result(self, success: bool) -> None:
+        self._stop_spinner()
+        error_container = self.query_one("#error-container", Vertical)
+        error_msg = self.query_one("#error-message", Static)
+        password_input = self.query_one("#password-input", Input)
+
+        password_input.disabled = False
+
+        if success:
+            log.info("Root authentication successful")
+            self.dismiss(True)
+            return
+
+        log.warning("Root authentication failed")
+        error_container.remove_class("--hidden")
+        error_msg.update("Error: Invalid password")
+        password_input.value = ""
+        password_input.focus()
 
     def action_cancel(self) -> None:
-        """Cancel the dialog."""
         self.dismiss(None)
 
 
