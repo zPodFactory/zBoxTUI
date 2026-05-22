@@ -101,6 +101,7 @@ def _make_theme(
             "z-title": title,
             "z-error": error,
             "z-success": success,
+            "z-warning": warning,
         },
     )
 

@@ -30,6 +30,11 @@ SYSTEM_CONFIG_PATH = "/etc/zboxtui/app.conf"
 DEFAULT_LOG_FILE = "/tmp/zboxtui.log"
 DEFAULT_LOG_LEVEL = "INFO"
 
+# Placeholder URL until the public catalog repo goes live. The default
+# points back at the shipped catalog so refresh-from-URL works against a
+# real file during local testing.
+DEFAULT_CATALOG_URL = "file:///etc/zboxtui/packages.json"
+
 
 @dataclass
 class AppConfig:
@@ -38,6 +43,7 @@ class AppConfig:
     log_file: str = DEFAULT_LOG_FILE
     log_level: str = DEFAULT_LOG_LEVEL
     theme: str = DEFAULT_THEME_NAME
+    catalog_url: str = DEFAULT_CATALOG_URL
 
     # Path of the config file actually loaded (empty if defaults are in use).
     # Logged at startup so users can confirm which file took effect.
@@ -142,12 +148,16 @@ def load_config(config_path: str | None = None) -> AppConfig:
     if "theme" in parser:
         config.theme = parser["theme"].get("name", config.theme)
 
+    if "packages" in parser:
+        config.catalog_url = parser["packages"].get("catalog_url", config.catalog_url)
+
     config.config_file_used = str(path)
     # Re-run validation (post_init only fires on construction).
     return AppConfig(
         log_file=config.log_file,
         log_level=config.log_level,
         theme=config.theme,
+        catalog_url=config.catalog_url,
         config_file_used=config.config_file_used,
     )
 
@@ -170,6 +180,13 @@ log_file = {DEFAULT_LOG_FILE}
 
 # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: {DEFAULT_LOG_LEVEL})
 log_level = {DEFAULT_LOG_LEVEL}
+
+[packages]
+# Where the Configure Packages dialog pulls the curated catalog from.
+# Defaults to a local file path so refresh works against an on-disk
+# copy during testing; point this at the public catalog URL once
+# zPodFactory/zbox-packages goes live.
+catalog_url = {DEFAULT_CATALOG_URL}
 
 [theme]
 # Built-in themes: catppuccin-mocha (default), vmware-esxi, nord,

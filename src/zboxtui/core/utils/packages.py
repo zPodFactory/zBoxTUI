@@ -19,6 +19,8 @@ The dialog widget that consumes these lives in core/menu_items/packages.py
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum, auto
@@ -27,6 +29,9 @@ from typing import Literal
 
 SUPPORTED_SCHEMA_VERSION = 1
 PackageType = Literal["apt", "github_release", "script"]
+
+# System-wide catalog override, mirroring SYSTEM_CONFIG_PATH for app.conf.
+SYSTEM_CATALOG_PATH = "/etc/zboxtui/packages.json"
 
 
 # ---------------------------------------------------------------------------
@@ -321,3 +326,134 @@ def format_catalog_freshness(updated_at: datetime | None, now: datetime) -> str:
         rel = f"{rel} — Refresh recommended"
 
     return f"Last update: {date_str} ({rel})"
+
+
+# ---------------------------------------------------------------------------
+# Path resolution
+# ---------------------------------------------------------------------------
+
+
+def cached_catalog_path() -> Path:
+    """Where Phase 3 will write a refreshed catalog: $XDG_CACHE_HOME/zboxtui/packages.json
+    or ~/.cache/zboxtui/packages.json."""
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".cache"
+    return base / "zboxtui" / "packages.json"
+
+
+def shipped_catalog_path() -> Path:
+    """The catalog bundled with the package itself."""
+    return Path(__file__).resolve().parent.parent.parent / "data" / "packages.json"
+
+
+def resolve_catalog_path(explicit: str | None = None) -> Path:
+    """Pick the catalog file to load, highest priority first.
+
+    1. ``explicit`` argument (e.g. a future ``--packages`` CLI flag).
+    2. ``$ZBOXTUI_PACKAGES`` environment variable.
+    3. The Phase-3 cache at ``~/.cache/zboxtui/packages.json``.
+    4. The system-wide override at ``/etc/zboxtui/packages.json``.
+    5. The shipped default that comes with the package.
+
+    Always returns a path; the caller may still get a :class:`CatalogError`
+    when loading if the resolved file is corrupt.
+    """
+    if explicit:
+        return Path(explicit)
+    env = os.environ.get("ZBOXTUI_PACKAGES")
+    if env:
+        return Path(env)
+    cached = cached_catalog_path()
+    if cached.is_file():
+        return cached
+    system = Path(SYSTEM_CATALOG_PATH)
+    if system.is_file():
+        return system
+    return shipped_catalog_path()
+
+
+# ---------------------------------------------------------------------------
+# State detection (subprocess wrappers — kept narrow and testable by isolation)
+# ---------------------------------------------------------------------------
+
+
+def query_apt_state(package_names: list[str]) -> dict[str, PackageState]:
+    """One ``apt-cache policy`` call covers every apt package in the catalog.
+
+    Parses the per-package blocks for ``Installed:`` and ``Candidate:`` lines.
+    A package not installed is reported as :class:`InstallState.NOT_INSTALLED`.
+    A package whose installed version differs from its candidate is reported
+    as :class:`InstallState.UPGRADE_AVAILABLE`. On systems without
+    ``apt-cache`` (or on timeout), every package is reported as
+    ``NOT_INSTALLED`` so the caller degrades gracefully.
+    """
+    result: dict[str, PackageState] = {
+        name: PackageState(state=InstallState.NOT_INSTALLED) for name in package_names
+    }
+    if not package_names:
+        return result
+
+    try:
+        proc = subprocess.run(
+            ["apt-cache", "policy", *package_names],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return result
+
+    current: str | None = None
+    installed: str | None = None
+    candidate: str | None = None
+
+    def flush() -> None:
+        if current and current in result:
+            result[current] = _state_from_versions(installed, candidate)
+
+    for line in proc.stdout.splitlines():
+        # Package-block header: zero-indented "name:" line.
+        if line and not line[0].isspace() and line.rstrip().endswith(":"):
+            flush()
+            current = line.rstrip()[:-1]
+            installed = None
+            candidate = None
+            continue
+        stripped = line.strip()
+        if stripped.startswith("Installed:"):
+            installed = stripped.split(":", 1)[1].strip()
+        elif stripped.startswith("Candidate:"):
+            candidate = stripped.split(":", 1)[1].strip()
+    flush()
+    return result
+
+
+def _state_from_versions(installed: str | None, candidate: str | None) -> PackageState:
+    """Convert apt-cache policy's per-package strings into a PackageState."""
+    if installed in (None, "", "(none)"):
+        return PackageState(state=InstallState.NOT_INSTALLED)
+    if candidate and candidate not in ("(none)", installed):
+        return PackageState(
+            state=InstallState.UPGRADE_AVAILABLE,
+            installed_version=installed,
+            candidate_version=candidate,
+        )
+    return PackageState(state=InstallState.INSTALLED, installed_version=installed)
+
+
+def query_catalog_state(catalog: Catalog) -> dict[str, PackageState]:
+    """Resolve the install state of every package in ``catalog``.
+
+    Currently only ``apt`` packages get real detection — the trimmed initial
+    catalog is apt-only, and ``github_release``/``script`` runtime detection
+    is part of Phase 4. Non-apt packages fall back to NOT_INSTALLED until
+    that lands.
+    """
+    apt_names = [p.name for p in catalog.iter_packages() if p.type == "apt"]
+    states = query_apt_state(apt_names)
+    # Non-apt packages: placeholder until Phase 4 wires up version_command.
+    for pkg in catalog.iter_packages():
+        if pkg.name not in states:
+            states[pkg.name] = PackageState(state=InstallState.NOT_INSTALLED)
+    return states
