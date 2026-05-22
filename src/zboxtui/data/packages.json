@@ -170,15 +170,9 @@
           "uninstall_command": "apt-get remove -y chezmoi"
         },
         {
-          "type": "script",
+          "type": "apt",
           "name": "mise",
-          "description": "Dev tool version manager — asdf, but faster (Rust)",
-          "version": "2025.1.0",
-          "binary": "/usr/local/bin/mise",
-          "version_command": "mise --version",
-          "version_pattern": "(\\d{4}\\.\\d+\\.\\d+)",
-          "install_command": "MISE_INSTALL_PATH=/usr/local/bin/mise curl -fsSL https://mise.run | sh",
-          "uninstall_command": "rm -f /usr/local/bin/mise"
+          "description": "Dev tool version manager — asdf, but faster (Rust)"
         }
       ]
     },
@@ -199,29 +193,70 @@
       ]
     },
     {
-      "name": "Build & Make",
-      "description": "Toolchain bits you'll inevitably want.",
+      "name": "Containers & Orchestration",
+      "description": "Packages from the Docker and Kubernetes APT repositories configured by packer-zbox.",
       "packages": [
         {
           "type": "apt",
-          "name": "make",
-          "description": "GNU Make — the build orchestration utility"
+          "name": "docker-ce",
+          "description": "Docker Engine — daemon, CLI, and containerd"
+        },
+        {
+          "type": "apt",
+          "name": "docker-compose-plugin",
+          "description": "Docker Compose v2 plugin (use as `docker compose`)"
+        },
+        {
+          "type": "apt",
+          "name": "docker-buildx-plugin",
+          "description": "Buildx — multi-platform image builds"
+        },
+        {
+          "type": "apt",
+          "name": "kubectl",
+          "description": "Kubernetes command-line client"
         }
       ]
     },
     {
-      "name": "VMware Guest Tools",
-      "description": "Required only when zbox is running as a VMware VM.",
+      "name": "Infrastructure as Code",
+      "description": "Packages from the HashiCorp APT repository configured by packer-zbox.",
       "packages": [
         {
           "type": "apt",
-          "name": "open-vm-tools",
-          "description": "Open-source VMware guest agent (vmtoolsd)"
+          "name": "terraform",
+          "description": "Declarative infrastructure provisioning"
         },
         {
           "type": "apt",
-          "name": "cloud-guest-utils",
-          "description": "Cloud-init helpers used during first-boot customization"
+          "name": "packer",
+          "description": "Build identical machine images for multiple platforms"
+        },
+        {
+          "type": "apt",
+          "name": "vault",
+          "description": "Secrets management and identity-based access"
+        }
+      ]
+    },
+    {
+      "name": "Networking & VPN",
+      "description": "Packages from the Tailscale, NetBird, and Cloudflare APT repositories configured by packer-zbox.",
+      "packages": [
+        {
+          "type": "apt",
+          "name": "tailscale",
+          "description": "Zero-config mesh VPN built on WireGuard"
+        },
+        {
+          "type": "apt",
+          "name": "netbird",
+          "description": "Open-source alternative mesh VPN (WireGuard-based)"
+        },
+        {
+          "type": "apt",
+          "name": "cloudflared",
+          "description": "Cloudflare Tunnel client (expose local services to the internet)"
         }
       ]
     }

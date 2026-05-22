@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-05-19T08:30:00Z",
+  "groups": [
+    {
+      "name": "Modern CLI Tools",
+      "description": "Pretty CLI tooling.",
+      "packages": [
+        {
+          "type": "apt",
+          "name": "bat",
+          "description": "cat with syntax highlighting"
+        },
+        {
+          "type": "apt",
+          "name": "ripgrep",
+          "description": "Recursive grep"
+        }
+      ]
+    },
+    {
+      "name": "Shell Experience",
+      "description": "",
+      "packages": [
+        {
+          "type": "github_release",
+          "name": "oh-my-posh",
+          "description": "Prompt engine",
+          "version": "25.0.0",
+          "github_repo": "JanDeDobbeleer/oh-my-posh",
+          "binary": "/usr/local/bin/oh-my-posh",
+          "version_command": "oh-my-posh --version",
+          "version_pattern": "(\\d+\\.\\d+\\.\\d+)",
+          "install_command": "curl -fsSL -o /usr/local/bin/oh-my-posh https://example/{version}/posh && chmod +x /usr/local/bin/oh-my-posh",
+          "uninstall_command": "rm -f /usr/local/bin/oh-my-posh"
+        },
+        {
+          "type": "script",
+          "name": "atuin",
+          "description": "Magical shell history",
+          "version": "18.5.0",
+          "binary": "/usr/local/bin/atuin",
+          "version_command": "atuin --version",
+          "version_pattern": "atuin (\\d+\\.\\d+\\.\\d+)",
+          "install_command": "curl -fsSL https://example/atuin/install | sh",
+          "uninstall_command": "rm -f /usr/local/bin/atuin"
+        }
+      ]
+    }
+  ]
+}
