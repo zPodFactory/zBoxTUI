@@ -27,13 +27,19 @@ from ..themes import DEFAULT_THEME_NAME
 
 SYSTEM_CONFIG_PATH = "/etc/zboxtui/app.conf"
 
-DEFAULT_LOG_FILE = "/tmp/zboxtui.log"
+# Default log path: relative to the process's working directory so it
+# lands next to wherever the user runs `zboxtui` from. Override via
+# config to use an absolute path (e.g. /var/log/zboxtui.log on a real
+# zbox deployment).
+DEFAULT_LOG_FILE = "zboxtui.log"
 DEFAULT_LOG_LEVEL = "INFO"
 
-# Placeholder URL until the public catalog repo goes live. The default
-# points back at the shipped catalog so refresh-from-URL works against a
-# real file during local testing.
-DEFAULT_CATALOG_URL = "file:///etc/zboxtui/packages.json"
+# Catalog URL — falls back to the shipped catalog so "Refresh Curated
+# List" is a no-op-but-successful action during local testing rather
+# than an instant failure against a hardcoded /etc/ path that may not
+# exist. Once zPodFactory/zbox-packages goes live this becomes a real
+# https URL.
+DEFAULT_CATALOG_URL = ""
 
 
 @dataclass
@@ -175,18 +181,20 @@ def generate_sample_config() -> str:
 #   4. {SYSTEM_CONFIG_PATH}
 
 [general]
-# Log file location (default: {DEFAULT_LOG_FILE})
+# Log file location. Default is "zboxtui.log" in the directory you
+# launched zboxtui from. Use an absolute path on a real deployment
+# (e.g. /var/log/zboxtui.log).
 log_file = {DEFAULT_LOG_FILE}
 
 # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: {DEFAULT_LOG_LEVEL})
 log_level = {DEFAULT_LOG_LEVEL}
 
 [packages]
-# Where the Configure Packages dialog pulls the curated catalog from.
-# Defaults to a local file path so refresh works against an on-disk
-# copy during testing; point this at the public catalog URL once
-# zPodFactory/zbox-packages goes live.
-catalog_url = {DEFAULT_CATALOG_URL}
+# Where the Configure Packages "Refresh Curated List" action pulls
+# the catalog from. If left blank (default), Refresh re-copies the
+# catalog bundled with the zboxtui package. Point this at the public
+# https URL once zPodFactory/zbox-packages goes live.
+# catalog_url = https://raw.githubusercontent.com/zPodFactory/zbox-packages/main/packages.json
 
 [theme]
 # Built-in themes: catppuccin-mocha (default), vmware-esxi, nord,

@@ -40,6 +40,7 @@ from ..utils.packages import (
     load_catalog,
     query_catalog_state,
     resolve_catalog_path,
+    shipped_catalog_path,
 )
 from ..utils.privilege import Privilege, detect_privilege
 from ..widgets.apply_dialog import ApplyDialog
@@ -156,7 +157,16 @@ class PackagesSubmenuDialog(ModalScreen[None]):
 
     def _do_refresh(self) -> None:
         url = get_config().catalog_url
-        log.info("Refreshing catalog from %s", url)
+        # Empty/unset config → fall back to the shipped catalog so this
+        # action stays useful before zPodFactory/zbox-packages goes live.
+        if not url:
+            url = shipped_catalog_path().as_uri()
+            log.info(
+                "No catalog_url configured; refreshing from shipped catalog at %s",
+                url,
+            )
+        else:
+            log.info("Refreshing catalog from %s", url)
         result = refresh_catalog(url)
         if result.status == "ok":
             title = "Catalog Refreshed"
