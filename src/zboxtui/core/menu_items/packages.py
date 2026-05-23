@@ -9,6 +9,7 @@ refresh action).
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -39,6 +40,20 @@ log = get_logger("menu.packages")
 
 _NAME_WIDTH = 23
 _VERSION_WIDTH = 22
+
+# Dev/demo: when ZBOXTUI_DEMO_UPGRADES=1 is set, replace the real
+# apt state for these packages with a synthetic upgrade so the user
+# can visually verify what the green "new version" styling looks like
+# without waiting for an actual upgrade to drop. Values are (fake
+# installed, fake candidate) — comparison happens on the raw apt
+# strings inside _state_from_versions, so candidate ≠ installed is
+# all that's required.
+_DEMO_UPGRADES: dict[str, tuple[str, str]] = {
+    "btop": ("1.3.0-1", "1.3.2-0.1"),
+    "docker-ce": ("27.3.1-1", "29.5.2-1"),
+    "kubectl": ("1.28.4-1.1", "1.29.0-1.1"),
+    "tailscale": ("1.96.0", "1.98.3"),
+}
 
 
 class PackagesDialog(ModalScreen[None]):
@@ -164,6 +179,7 @@ class PackagesDialog(ModalScreen[None]):
         if self._catalog is None:
             return
         self._states = query_catalog_state(self._catalog)
+        self._maybe_inject_demo_upgrades()
         # Rebuild row text in place. The compose() block already laid out
         # the Statics; we walk them via the catalog's iter_packages() order.
         rows = list(self.query(".pkg-row").results(Static))
@@ -171,6 +187,24 @@ class PackagesDialog(ModalScreen[None]):
             state = self._states[pkg.name]
             row.update(self._render_row(pkg, state))
             row.set_classes(f"pkg-row {self._row_class(state)}")
+
+    def _maybe_inject_demo_upgrades(self) -> None:
+        """If ``ZBOXTUI_DEMO_UPGRADES=1`` is set, overlay synthetic upgrades.
+
+        Lets you see the green "→ new ↑" styling against the live TUI on
+        a freshly-updated box where no real upgrades are pending. Has no
+        effect when the env var is unset.
+        """
+        if os.environ.get("ZBOXTUI_DEMO_UPGRADES") not in ("1", "true", "yes"):
+            return
+        log.info("Demo mode active: injecting synthetic upgrades")
+        for name, (installed, candidate) in _DEMO_UPGRADES.items():
+            if name in self._states:
+                self._states[name] = PackageState(
+                    state=InstallState.UPGRADE_AVAILABLE,
+                    installed_version=installed,
+                    candidate_version=candidate,
+                )
 
     def _render_row(self, pkg, state: PackageState) -> Text:
         """Build the Rich Text for one row.
