@@ -373,6 +373,49 @@ def resolve_catalog_path(explicit: str | None = None) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Version-string simplification
+# ---------------------------------------------------------------------------
+
+
+def simplify_apt_version(version: str) -> str:
+    """Trim Debian-isms out of an apt version string for display.
+
+    Debian package versions look like ``[epoch:]upstream[-debian_revision]``
+    with optional distribution suffixes (``~debian.13~trixie``, ``~deb13u1``,
+    ``~bpo12+1``, ``+deb12u1``, etc.). Those bits matter for the package
+    manager but just add noise in a TUI row, so we strip:
+
+      * the epoch prefix (``5:`` in ``5:29.5.2-1~debian.13~trixie``)
+      * anything starting with ``~`` or ``+deb`` (the distribution suffix)
+
+    The Debian revision (``-1``, ``-0.1``) is kept because it can move
+    independently of upstream and is short.
+
+    Examples:
+        ``5:29.5.2-1~debian.13~trixie`` -> ``29.5.2-1``
+        ``1:1.3.2-0.1``                 -> ``1.3.2-0.1``
+        ``2.34-3~bpo12+1``              -> ``2.34-3``
+        ``1.6.6+ds-1+deb13u1``          -> ``1.6.6+ds-1``
+        ``1.98.3``                      -> ``1.98.3``
+    """
+    if not version:
+        return version
+    # Strip leading epoch (digits + ":").
+    head, sep, tail = version.partition(":")
+    if sep and head.isdigit():
+        version = tail
+    # Strip distribution suffix at the first '~' or '+deb'.
+    cut = len(version)
+    tilde = version.find("~")
+    if tilde >= 0:
+        cut = min(cut, tilde)
+    plus_deb = version.find("+deb")
+    if plus_deb >= 0:
+        cut = min(cut, plus_deb)
+    return version[:cut]
+
+
+# ---------------------------------------------------------------------------
 # State detection (subprocess wrappers — kept narrow and testable by isolation)
 # ---------------------------------------------------------------------------
 
@@ -430,16 +473,24 @@ def query_apt_state(package_names: list[str]) -> dict[str, PackageState]:
 
 
 def _state_from_versions(installed: str | None, candidate: str | None) -> PackageState:
-    """Convert apt-cache policy's per-package strings into a PackageState."""
+    """Convert apt-cache policy's per-package strings into a PackageState.
+
+    Comparison happens on the *raw* strings (so the package manager's
+    full version semantics decide whether it's an upgrade), but the
+    versions stored on PackageState are simplified for display.
+    """
     if installed in (None, "", "(none)"):
         return PackageState(state=InstallState.NOT_INSTALLED)
-    if candidate and candidate not in ("(none)", installed):
+    is_upgrade = bool(candidate and candidate not in ("(none)", installed))
+    installed_short = simplify_apt_version(installed) if installed else None
+    candidate_short = simplify_apt_version(candidate) if candidate else None
+    if is_upgrade:
         return PackageState(
             state=InstallState.UPGRADE_AVAILABLE,
-            installed_version=installed,
-            candidate_version=candidate,
+            installed_version=installed_short,
+            candidate_version=candidate_short,
         )
-    return PackageState(state=InstallState.INSTALLED, installed_version=installed)
+    return PackageState(state=InstallState.INSTALLED, installed_version=installed_short)
 
 
 def query_catalog_state(catalog: Catalog) -> dict[str, PackageState]:

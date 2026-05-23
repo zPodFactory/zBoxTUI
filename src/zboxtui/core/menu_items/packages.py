@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Vertical, VerticalScroll
@@ -77,12 +78,12 @@ class PackagesDialog(ModalScreen[None]):
         color: $z-fg;
     }
 
-    PackagesDialog .pkg-row.--installed {
-        color: $z-fg;
-    }
-
+    /* Installed-and-current and upgrade-available both use the normal
+     * foreground; the upgrade row paints the "→ new ↑" segment green
+     * inline via Rich Text styling (see _render_row). */
+    PackagesDialog .pkg-row.--installed,
     PackagesDialog .pkg-row.--upgrade {
-        color: $z-warning;
+        color: $z-fg;
     }
 
     PackagesDialog .pkg-row.--missing {
@@ -138,15 +139,8 @@ class PackagesDialog(ModalScreen[None]):
                         state = self._states.get(
                             pkg.name, PackageState(state=InstallState.NOT_INSTALLED)
                         )
-                        row_text = format_package_row(
-                            pkg,
-                            state,
-                            target_checked=state.is_installed,
-                            name_width=_NAME_WIDTH,
-                            version_width=_VERSION_WIDTH,
-                        )
                         yield Static(
-                            row_text,
+                            self._render_row(pkg, state),
                             classes=f"pkg-row {self._row_class(state)}",
                             markup=False,
                         )
@@ -175,16 +169,52 @@ class PackagesDialog(ModalScreen[None]):
         rows = list(self.query(".pkg-row").results(Static))
         for row, pkg in zip(rows, self._catalog.iter_packages(), strict=False):
             state = self._states[pkg.name]
-            row.update(
-                format_package_row(
-                    pkg,
-                    state,
-                    target_checked=state.is_installed,
-                    name_width=_NAME_WIDTH,
-                    version_width=_VERSION_WIDTH,
-                )
-            )
+            row.update(self._render_row(pkg, state))
             row.set_classes(f"pkg-row {self._row_class(state)}")
+
+    def _render_row(self, pkg, state: PackageState) -> Text:
+        """Build the Rich Text for one row.
+
+        Plain rendering comes from format_package_row(); when an upgrade
+        is available, the ``→ new ↑`` segment is restyled bold + theme
+        success color so the new version stands out.
+        """
+        plain = format_package_row(
+            pkg,
+            state,
+            target_checked=state.is_installed,
+            name_width=_NAME_WIDTH,
+            version_width=_VERSION_WIDTH,
+        )
+        text = Text(plain)
+
+        if (
+            state.state == InstallState.UPGRADE_AVAILABLE
+            and state.installed_version
+            and state.candidate_version
+        ):
+            # Locate "<installed> → <candidate> ↑" in the row and stylize
+            # just the "→ <candidate> ↑" tail. The version column has
+            # fixed width so the prefix appears at a predictable offset,
+            # but searching by string is robust to width changes.
+            marker = f"{state.installed_version} "
+            arrow_idx = plain.find(marker)
+            if arrow_idx >= 0:
+                segment_start = arrow_idx + len(marker)
+                # Find the indicator that closes the segment.
+                indicator_idx = plain.find(" ↑", segment_start)
+                if indicator_idx >= 0:
+                    segment_end = indicator_idx + len(" ↑")
+                    color = self._success_color()
+                    text.stylize(f"bold {color}", segment_start, segment_end)
+        return text
+
+    def _success_color(self) -> str:
+        """Hex of the active theme's z-success colour (fallback: 'green')."""
+        try:
+            return self.app.get_css_variables().get("z-success") or "green"
+        except Exception:
+            return "green"
 
     def _row_class(self, state: PackageState) -> str:
         if state.state == InstallState.UPGRADE_AVAILABLE:

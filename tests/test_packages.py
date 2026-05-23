@@ -27,6 +27,7 @@ from zboxtui.core.utils.packages import (
     format_catalog_freshness,
     format_package_row,
     load_catalog,
+    simplify_apt_version,
     version_cell,
 )
 
@@ -218,6 +219,42 @@ def test_format_row_user_marks_absent_for_install() -> None:
     row = format_package_row(pkg, state, target_checked=True, name_width=10, version_width=10)
     assert row.startswith("[+] ripgrep")
     assert row.endswith("Recursive grep")
+
+
+# ---------------------------------------------------------------------------
+# Version-string simplification
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # docker-ce style: epoch + debian/trixie suffix
+        ("5:29.5.2-1~debian.13~trixie", "29.5.2-1"),
+        # btop style: epoch + clean debian revision
+        ("1:1.3.2-0.1", "1.3.2-0.1"),
+        # bare semver
+        ("1.98.3", "1.98.3"),
+        # backports
+        ("2.34-3~bpo12+1", "2.34-3"),
+        # +deb style suffix (terraform-like)
+        ("1.6.6+ds-1+deb13u1", "1.6.6+ds-1"),
+        # epoch but no suffix
+        ("2:4.5.6-1", "4.5.6-1"),
+        # already clean
+        ("0.20.0", "0.20.0"),
+        # empty / blank
+        ("", ""),
+    ],
+)
+def test_simplify_apt_version(raw: str, expected: str) -> None:
+    assert simplify_apt_version(raw) == expected
+
+
+def test_simplify_does_not_strip_colon_inside_text() -> None:
+    """A non-numeric prefix before ':' is not an epoch and must be preserved."""
+    # Hypothetical, but defends against being too aggressive.
+    assert simplify_apt_version("foo:bar") == "foo:bar"
 
 
 # ---------------------------------------------------------------------------
