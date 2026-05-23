@@ -21,6 +21,11 @@ Static:focus, Container:focus, Vertical:focus, Horizontal:focus, Input:focus {
     border: none;
 }
 
+/* Textual Input ships with padding: 0 2 — flush text in DCUI form fields. */
+Input.form-input {
+    padding: 0;
+}
+
 App, Vertical, Horizontal {
     scrollbar-background: $z-panel;
     scrollbar-color: $z-scrollbar;

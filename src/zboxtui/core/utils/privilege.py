@@ -4,10 +4,11 @@ The Configure Packages dialog needs to run ``apt-get`` as root. The
 current user is one of:
 
 * **root** (``geteuid() == 0``) — run apt-get directly, no wrapper.
-* **sudo with NOPASSWD** — ``sudo -n true`` succeeds. Prepend ``sudo``.
-* **sudo with password required** — ``sudo -n true`` fails, but the
-  user is in the ``sudo``/``wheel`` group. We prompt for the password
-  separately and feed it to ``sudo -S`` over stdin.
+* **sudo with NOPASSWD** — ``sudo -n apt-get`` succeeds even after clearing
+  any cached sudo timestamp (see :func:`_sudo_nopasswd_works`).
+* **sudo with password required** — the user is in the ``sudo``/``wheel``
+  group but ``sudo -n`` fails once cached credentials are dropped. We
+  prompt for the password separately and feed it to ``sudo -S`` over stdin.
 * **none** — can't elevate. The dialog disables Apply and shows a
   banner asking the user to relaunch as root.
 
@@ -19,6 +20,7 @@ narrow and pure (no Textual imports) so they can be unit-tested with
 
 from __future__ import annotations
 
+import contextlib
 import grp
 import os
 import subprocess
@@ -54,10 +56,24 @@ def _user_in_sudoers_group() -> bool:
 
 
 def _sudo_nopasswd_works(timeout: float = 3.0) -> bool:
-    """Probe ``sudo -n true`` non-interactively. Returns True on exit 0."""
+    """Probe whether ``sudo -n apt-get`` works without a password.
+
+    Runs ``sudo -k`` first so a *cached* sudo timestamp from an earlier
+    terminal session cannot masquerade as NOPASSWD.  Real NOPASSWD rules
+    in sudoers still pass ``sudo -n`` after ``-k``; password-only users
+    do not.
+    """
+    with contextlib.suppress(subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        subprocess.run(
+            ["sudo", "-k"],
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+
     try:
         result = subprocess.run(
-            ["sudo", "-n", "true"],
+            ["sudo", "-n", "apt-get", "-s", "update"],
             capture_output=True,
             timeout=timeout,
             check=False,

@@ -44,6 +44,7 @@ class SudoPasswordDialog(ModalScreen[str | None]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=False),
+        Binding("enter", "submit", "OK", show=False),
     ]
 
     DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="SudoPasswordDialog", width=50) + """
@@ -129,7 +130,9 @@ class SudoPasswordDialog(ModalScreen[str | None]):
                 yield Static("<Enter> OK    <Esc> Cancel", id="dialog-footer")
 
     def on_mount(self) -> None:
-        self.query_one("#password-input", Input).focus()
+        self.call_after_refresh(
+            lambda: self.query_one("#password-input", Input).focus()
+        )
 
     @on(Input.Submitted)
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -189,6 +192,9 @@ class SudoPasswordDialog(ModalScreen[str | None]):
 
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+    def action_submit(self) -> None:
+        self._submit()
 
 
 def _validate_sudo_password(password: str) -> bool:

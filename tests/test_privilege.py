@@ -119,6 +119,37 @@ def test_build_command_sudo_nopasswd_prepends_n() -> None:
     assert cmd == ["sudo", "-n", "apt-get", "install", "-y", "htop"]
 
 
+def test_sudo_nopasswd_probe_clears_cache_then_tests_apt(
+    nonroot_euid: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        seen.append(list(args))
+        return subprocess.CompletedProcess(args=args, returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(pv.subprocess, "run", fake_run)
+    assert detect_privilege() == Privilege.SUDO_NOPASSWD
+    assert seen[0] == ["sudo", "-k"]
+    assert seen[1][:3] == ["sudo", "-n", "apt-get"]
+
+
+def test_cached_sudo_timestamp_does_not_count_as_nopasswd(
+    nonroot_euid: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without ``sudo -k``, a stale timestamp could fool the probe."""
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        # After cache clear, passwordless apt is not available.
+        if args[:2] == ["sudo", "-k"]:
+            return subprocess.CompletedProcess(args=args, returncode=0, stdout=b"", stderr=b"")
+        return subprocess.CompletedProcess(args=args, returncode=1, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(pv.subprocess, "run", fake_run)
+    _stub_in_sudo_group(monkeypatch, member=True)
+    assert detect_privilege() == Privilege.SUDO_PASSWORD
+
+
 def test_build_command_sudo_password_prepends_S_with_silent_prompt() -> None:
     cmd = build_apt_command(["apt-get", "install", "-y", "htop"], Privilege.SUDO_PASSWORD)
     assert cmd == ["sudo", "-S", "-p", "", "apt-get", "install", "-y", "htop"]

@@ -1,6 +1,6 @@
 """Fetch the curated package catalog from its configured URL.
 
-The TUI's "Refresh Curated List" action is the only place that does
+The TUI's "Refresh zBox curated package list" action is the only place that does
 network I/O — at startup we always load from the local cache or the
 shipped default. This module is the side-effecting half; the rest of
 ``packages.py`` stays pure.

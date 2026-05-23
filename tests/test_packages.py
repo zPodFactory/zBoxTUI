@@ -18,14 +18,20 @@ from zboxtui.core.utils.packages import (
     CHECKBOX_INSTALLED,
     CHECKBOX_PENDING_INSTALL,
     CHECKBOX_PENDING_REMOVE,
+    CHECKBOX_PENDING_UPGRADE,
     Catalog,
     CatalogError,
     CuratedPackage,
     InstallState,
     PackageState,
+    PackageChangeSet,
     checkbox_for,
+    compute_package_changes,
     format_catalog_freshness,
+    format_package_detail_body,
+    format_package_picker_line,
     format_package_row,
+    format_pending_changes_summary,
     load_catalog,
     simplify_apt_version,
     version_cell,
@@ -133,7 +139,7 @@ def test_shipped_default_catalog_loads() -> None:
     "current,target,expected",
     [
         (InstallState.INSTALLED, True, CHECKBOX_INSTALLED),
-        (InstallState.UPGRADE_AVAILABLE, True, CHECKBOX_INSTALLED),
+        (InstallState.UPGRADE_AVAILABLE, True, CHECKBOX_PENDING_UPGRADE),
         (InstallState.NOT_INSTALLED, False, CHECKBOX_ABSENT),
         (InstallState.INSTALLED, False, CHECKBOX_PENDING_REMOVE),
         (InstallState.UPGRADE_AVAILABLE, False, CHECKBOX_PENDING_REMOVE),
@@ -145,6 +151,56 @@ def test_checkbox_for_every_state_combo(
 ) -> None:
     state = PackageState(state=current, installed_version="1.0", candidate_version="1.1")
     assert checkbox_for(state, target) == expected
+
+
+def test_compute_package_changes_detects_install_remove_and_upgrade() -> None:
+    pkgs = [
+        CuratedPackage(type="apt", name="newpkg", description=""),
+        CuratedPackage(type="apt", name="oldpkg", description=""),
+        CuratedPackage(type="apt", name="uppkg", description=""),
+    ]
+    states = {
+        "newpkg": PackageState(state=InstallState.NOT_INSTALLED),
+        "oldpkg": PackageState(state=InstallState.INSTALLED, installed_version="1.0"),
+        "uppkg": PackageState(
+            state=InstallState.UPGRADE_AVAILABLE,
+            installed_version="1.0",
+            candidate_version="2.0",
+        ),
+    }
+    targets = {"newpkg": True, "oldpkg": False, "uppkg": True}
+    changes = compute_package_changes(pkgs, states, targets)
+    assert changes.to_install == ("newpkg",)
+    assert changes.to_remove == ("oldpkg",)
+    assert changes.to_upgrade == ("uppkg",)
+    assert changes.install_names() == ["newpkg", "uppkg"]
+
+
+def test_format_pending_changes_summary_lists_names_when_few() -> None:
+    changes = PackageChangeSet(to_install=("bat",), to_upgrade=("htop",))
+    text, highlight = format_pending_changes_summary(changes)
+    assert "bat" in text and "htop" in text
+    assert highlight is True
+
+
+def test_format_package_detail_body_includes_full_description() -> None:
+    pkg = CuratedPackage(
+        type="apt",
+        name="cloudflared",
+        description="Cloudflare Tunnel client (expose local services to the internet)",
+    )
+    state = PackageState(state=InstallState.NOT_INSTALLED, candidate_version="2024.8.0")
+    body = format_package_detail_body(
+        pkg,
+        state,
+        group_name="Networking & VPN",
+        group_description="Tailscale, NetBird, and Cloudflare packages.",
+        target_checked=True,
+    )
+    assert "Category: Networking & VPN" in body
+    assert "Cloudflare Tunnel client (expose local services to the internet)" in body
+    assert "Marked for install" in body
+    assert "Not installed (available: 2024.8.0)" in body
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +223,7 @@ def test_version_cell_shows_arrow_when_upgrade_available() -> None:
         installed_version="0.19.0",
         candidate_version="0.20.0",
     )
-    assert version_cell(state) == "0.19.0 ↑ 0.20.0"
+    assert version_cell(state) == "0.19.0 → 0.20.0"
 
 
 # ---------------------------------------------------------------------------
@@ -183,8 +239,7 @@ def test_format_row_apt_not_installed_no_candidate() -> None:
     pkg = _apt(name="tmux", desc="Terminal multiplexer")
     state = PackageState(state=InstallState.NOT_INSTALLED)
     row = format_package_row(pkg, state, target_checked=False, name_width=10, version_width=10)
-    # No candidate → version cell is empty after the separator.
-    assert row.plain == "[ ] tmux       │ "
+    assert row.plain == "[ ] tmux                  "
 
 
 def test_format_row_apt_not_installed_shows_candidate() -> None:
@@ -192,26 +247,25 @@ def test_format_row_apt_not_installed_shows_candidate() -> None:
     pkg = _apt(name="tmux", desc="Terminal multiplexer")
     state = PackageState(state=InstallState.NOT_INSTALLED, candidate_version="3.3a")
     row = format_package_row(pkg, state, target_checked=False, name_width=10, version_width=10)
-    assert row.plain == "[ ] tmux       │ 3.3a"
+    assert row.plain == "[ ] tmux        3.3a      "
 
 
 def test_format_row_apt_installed_no_upgrade() -> None:
     pkg = _apt(name="htop", desc="Process viewer")
     state = PackageState(state=InstallState.INSTALLED, installed_version="3.0.5")
     row = format_package_row(pkg, state, target_checked=True, name_width=10, version_width=10)
-    assert row.plain == "[x] htop       │ 3.0.5"
+    assert row.plain == "[x] htop        3.0.5     "
 
 
-def test_format_row_upgrade_available_keeps_arrow_inline() -> None:
+def test_format_row_upgrade_available_shows_arrow() -> None:
     pkg = CuratedPackage(type="github_release", name="eza", description="Modern ls")
     state = PackageState(
         state=InstallState.UPGRADE_AVAILABLE,
         installed_version="0.19.0",
         candidate_version="0.20.0",
     )
-    row = format_package_row(pkg, state, target_checked=True, name_width=10, version_width=10)
-    # Both versions, arrow indicator, all on the first line.
-    assert row.plain == "[x] eza        │ 0.19.0     │ ↑ 0.20.0"
+    row = format_package_row(pkg, state, target_checked=True, name_width=10, version_width=16)
+    assert row.plain == "[↑] eza         0.19.0 → 0.20.0 "
 
 
 def test_format_row_upgrade_styles_only_the_new_version() -> None:
@@ -223,7 +277,7 @@ def test_format_row_upgrade_styles_only_the_new_version() -> None:
     )
     row = format_package_row(
         pkg, state, target_checked=True,
-        name_width=10, version_width=10,
+        name_width=10, version_width=16,
         upgrade_style="bold green",
     )
     # Exactly one styled span, applied to the candidate version "0.20.0".
@@ -237,14 +291,31 @@ def test_format_row_user_marks_installed_for_removal() -> None:
     pkg = _apt(name="lsd", desc="LSDeluxe")
     state = PackageState(state=InstallState.INSTALLED, installed_version="1.0.0")
     row = format_package_row(pkg, state, target_checked=False, name_width=8, version_width=10)
-    assert row.plain == "[-] lsd      │ 1.0.0"
+    assert row.plain == "[-] lsd       1.0.0     "
 
 
 def test_format_row_user_marks_absent_for_install() -> None:
     pkg = _apt(name="ripgrep", desc="Recursive grep")
     state = PackageState(state=InstallState.NOT_INSTALLED)
     row = format_package_row(pkg, state, target_checked=True, name_width=10, version_width=10)
-    assert row.plain == "[+] ripgrep    │ "
+    assert row.plain == "[+] ripgrep               "
+
+
+def test_format_picker_line_includes_truncated_description() -> None:
+    pkg = _apt(
+        name="htop",
+        desc="Interactive process viewer with a scrollable list of running processes",
+    )
+    state = PackageState(state=InstallState.INSTALLED, installed_version="3.0.5")
+    row = format_package_picker_line(
+        pkg,
+        state,
+        target_checked=True,
+        name_width=10,
+        version_width=10,
+        desc_width=20,
+    )
+    assert row.plain == "[x] htop        3.0.5       Interactive process…"
 
 
 # ---------------------------------------------------------------------------

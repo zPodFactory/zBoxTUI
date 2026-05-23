@@ -16,7 +16,7 @@
     },
     {
       "name": "Containers & Orchestration",
-      "description": "Packages from the Docker and Kubernetes APT repositories configured by packer-zbox.",
+      "description": "Packages from the Docker and Kubernetes APT repositories.",
       "packages": [
         {
           "type": "apt",
@@ -42,7 +42,7 @@
     },
     {
       "name": "Infrastructure as Code",
-      "description": "Packages from the HashiCorp APT repository configured by packer-zbox.",
+      "description": "Packages from the HashiCorp APT repository.",
       "packages": [
         {
           "type": "apt",
@@ -63,7 +63,7 @@
     },
     {
       "name": "Networking & VPN",
-      "description": "Packages from the Tailscale, NetBird, and Cloudflare APT repositories configured by packer-zbox.",
+      "description": "Packages from the Tailscale, NetBird, and Cloudflare APT repositories.",
       "packages": [
         {
           "type": "apt",

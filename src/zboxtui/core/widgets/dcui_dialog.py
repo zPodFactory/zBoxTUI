@@ -7,6 +7,7 @@ import re
 import subprocess
 import time
 from collections import deque
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from rich.spinner import Spinner
@@ -495,6 +496,7 @@ class MessageDialog(ModalScreen[bool]):
         title: str,
         message: str,
         *,
+        before_confirm: Callable[[], None] | None = None,
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,
@@ -502,6 +504,7 @@ class MessageDialog(ModalScreen[bool]):
         super().__init__(name=name, id=id, classes=classes)
         self._title = title
         self._message = message
+        self._before_confirm = before_confirm
 
     def compose(self) -> ComposeResult:
         with Container(id="dialog-outer"):
@@ -522,6 +525,8 @@ class MessageDialog(ModalScreen[bool]):
 
     def action_confirm(self) -> None:
         """Confirm the dialog."""
+        if self._before_confirm is not None:
+            self._before_confirm()
         self.dismiss(True)
 
     def action_cancel(self) -> None:
@@ -1347,6 +1352,12 @@ class NetworkInterfaceDialog(ModalScreen[str | None]):
         self.dismiss(None)
 
 
+class _NetworkFocusStatic(Static):
+    """Focusable static row (e.g. the DHCP toggle) for keyboard navigation."""
+
+    can_focus = True
+
+
 class NetworkConfigDialog(ModalScreen[bool]):
     """A dialog for configuring a network interface's IPv4 settings."""
 
@@ -1355,9 +1366,19 @@ class NetworkConfigDialog(ModalScreen[bool]):
     BINDINGS = [
         Binding("escape", "cancel", "Cancel", show=False),
         Binding("q", "cancel", "Cancel", show=False),
-        Binding("tab", "focus_next", "Next Field", show=False),
-        Binding("shift+tab", "focus_previous", "Previous Field", show=False),
+        Binding("tab", "focus_next_field", "Next Field", show=False, priority=True),
+        Binding("shift+tab", "focus_previous_field", "Previous Field", show=False, priority=True),
+        Binding("down", "focus_next_field", "Next Field", show=False),
+        Binding("up", "focus_previous_field", "Previous Field", show=False),
     ]
+
+    _FIELD_INPUTS = (
+        "ip-input",
+        "netmask-input",
+        "gateway-input",
+        "dns1-input",
+        "dns2-input",
+    )
 
     DEFAULT_CSS = DCUI_DIALOG_CSS.format(dialog_class="NetworkConfigDialog", width=55) + """
     NetworkConfigDialog .form-row {
@@ -1386,21 +1407,21 @@ class NetworkConfigDialog(ModalScreen[bool]):
 
     NetworkConfigDialog .dhcp-field {
         width: 1fr;
-        background: $z-mantle;
+        background: $z-bg;
         height: 1;
     }
 
     NetworkConfigDialog .dhcp-value {
         width: 1fr;
         color: $z-fg;
-        padding: 0 1;
+        background: $z-bg;
         content-align: left middle;
     }
 
     NetworkConfigDialog .dhcp-tag {
         width: auto;
-        color: $z-scrollbar;
-        padding: 0 1;
+        color: $z-fg-dim;
+        background: $z-bg;
         content-align: right middle;
     }
 
@@ -1411,6 +1432,15 @@ class NetworkConfigDialog(ModalScreen[bool]):
 
     NetworkConfigDialog #dhcp-label {
         color: $z-fg;
+    }
+
+    NetworkConfigDialog #dhcp-label {
+        width: auto;
+        padding: 0 1;
+    }
+
+    NetworkConfigDialog #dhcp-label:focus {
+        background: $z-panel-focus;
     }
 
     NetworkConfigDialog #dhcp-info {
@@ -1468,7 +1498,7 @@ class NetworkConfigDialog(ModalScreen[bool]):
                 # DHCP toggle row
                 with Horizontal(id="dhcp-row"):
                     dhcp_text = "[X] Use DHCP" if self._is_dhcp else "[ ] Use DHCP"
-                    yield Static(dhcp_text, id="dhcp-label")
+                    yield _NetworkFocusStatic(dhcp_text, id="dhcp-label", markup=False)
                     yield Static(dhcp_info, id="dhcp-info")
 
                 yield Static("Static Configuration:", id="section-label")
@@ -1561,7 +1591,7 @@ class NetworkConfigDialog(ModalScreen[bool]):
                 yield Static("", id="error-message")
                 yield Static("")  # Spacer before footer
                 yield Static(
-                    "<Space> Toggle DHCP    <Enter> Apply    <Esc> Cancel",
+                    "<Tab/↑↓> Next field  <Space> Toggle DHCP  <Enter> Apply  <Esc> Cancel",
                     id="dialog-footer",
                 )
 
@@ -1569,6 +1599,59 @@ class NetworkConfigDialog(ModalScreen[bool]):
         """Set initial visibility and take debug screenshot."""
         self._update_field_visibility()
         self.app.save_debug_screenshot("network_config_dialog")
+
+    def _focus_order(self) -> list[str]:
+        """Focusable fields in tab order (DHCP row, then static inputs)."""
+        order = ["dhcp-label"]
+        if not self._is_dhcp:
+            order.extend(self._FIELD_INPUTS)
+        return order
+
+    def _focused_field_id(self) -> str | None:
+        focused = self.focused
+        if focused is None:
+            return None
+        return focused.id
+
+    def _focus_field(self, field_id: str) -> None:
+        self.query_one(f"#{field_id}").focus()
+
+    def action_focus_next_field(self) -> None:
+        order = self._focus_order()
+        if not order:
+            return
+        current = self._focused_field_id()
+        if current is None or current not in order:
+            self._focus_field(order[0])
+            return
+        idx = order.index(current)
+        self._focus_field(order[(idx + 1) % len(order)])
+
+    def action_focus_previous_field(self) -> None:
+        order = self._focus_order()
+        if not order:
+            return
+        current = self._focused_field_id()
+        if current is None or current not in order:
+            self._focus_field(order[-1])
+            return
+        idx = order.index(current)
+        self._focus_field(order[(idx - 1) % len(order)])
+
+    @on(Input.Submitted)
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Enter in an input advances to the next field or applies."""
+        field_id = event.input.id
+        if field_id not in self._FIELD_INPUTS:
+            return
+        order = self._focus_order()
+        if field_id not in order:
+            return
+        idx = order.index(field_id)
+        if idx + 1 < len(order):
+            self._focus_field(order[idx + 1])
+        else:
+            self._submit()
 
     def _update_field_visibility(self) -> None:
         """Show/hide DHCP display vs Input rows based on current mode."""
@@ -1582,16 +1665,19 @@ class NetworkConfigDialog(ModalScreen[bool]):
             dhcp_row.display = self._is_dhcp
             input_row.display = not self._is_dhcp
 
-        # Focus first input when in static mode
-        if not self._is_dhcp:
-            self.query_one("#ip-input", Input).focus()
+        section_label = self.query_one("#section-label", Static)
+        section_label.update(
+            "DHCP Configuration:" if self._is_dhcp else "Static Configuration:"
+        )
+        self.query_one("#dhcp-label", _NetworkFocusStatic).focus()
 
     def on_key(self, event: Key) -> None:
-        """Handle key presses."""
-        if event.key == "space":
+        """Handle keys on the DHCP row (inputs use :meth:`on_input_submitted`)."""
+        field_id = self._focused_field_id()
+        if event.key == "space" and field_id == "dhcp-label":
             self._toggle_dhcp()
             event.stop()
-        elif event.key == "enter":
+        elif event.key == "enter" and field_id == "dhcp-label":
             self._submit()
             event.stop()
 
@@ -1599,13 +1685,13 @@ class NetworkConfigDialog(ModalScreen[bool]):
         """Toggle DHCP mode on/off."""
         self._is_dhcp = not self._is_dhcp
 
-        # Update DHCP label
-        dhcp_label = self.query_one("#dhcp-label", Static)
+        # Switch between DHCP display rows and Input rows first (always succeeds).
+        self._update_field_visibility()
+
+        # Update DHCP label (markup stays off from compose-time markup=False).
+        dhcp_label = self.query_one("#dhcp-label", _NetworkFocusStatic)
         dhcp_text = "[X] Use DHCP" if self._is_dhcp else "[ ] Use DHCP"
         dhcp_label.update(dhcp_text)
-
-        # Switch between DHCP display rows and Input rows
-        self._update_field_visibility()
 
         log.debug("DHCP toggled to: %s", self._is_dhcp)
 

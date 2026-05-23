@@ -17,6 +17,7 @@ The dialog widget that consumes these lives in core/menu_items/packages.py.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
@@ -24,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum, auto
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Sequence
 
 from rich.text import Text
 
@@ -227,19 +228,33 @@ class PackageState:
 #   [ ] currently absent    AND user wants it absent     -> no-op
 #   [+] currently absent    AND user wants to install    -> pending install
 #   [-] currently installed AND user wants to remove     -> pending remove
+#   [↑] upgrade available   AND user keeps it installed  -> pending upgrade
 CHECKBOX_INSTALLED = "[x]"
 CHECKBOX_ABSENT = "[ ]"
 CHECKBOX_PENDING_INSTALL = "[+]"
 CHECKBOX_PENDING_REMOVE = "[-]"
+CHECKBOX_PENDING_UPGRADE = "[↑]"
 
-# Visual separators used in the row formatter.
-COLUMN_SEPARATOR = " │ "
-UPGRADE_PREFIX = " │ ↑ "
+# Visual separators / indicators used in the picker row formatter.
+UPGRADE_ARROW = "→"
 UPGRADE_INDICATOR = "↑"
 
 
+def _truncate_display(text: str, max_len: int) -> str:
+    """Trim text for a fixed-width TUI column, adding an ellipsis when needed."""
+    if max_len <= 0:
+        return ""
+    if len(text) <= max_len:
+        return text
+    if max_len == 1:
+        return "…"
+    return text[: max_len - 1] + "…"
+
+
 def checkbox_for(state: PackageState, target_checked: bool) -> str:
-    """Pick the right [x]/[ ]/[+]/[-] symbol given current + target state."""
+    """Pick the right [x]/[ ]/[+]/[-]/[↑] symbol given current + target state."""
+    if state.state == InstallState.UPGRADE_AVAILABLE and target_checked:
+        return CHECKBOX_PENDING_UPGRADE
     if state.is_installed and target_checked:
         return CHECKBOX_INSTALLED
     if not state.is_installed and not target_checked:
@@ -249,17 +264,203 @@ def checkbox_for(state: PackageState, target_checked: bool) -> str:
     return CHECKBOX_PENDING_INSTALL
 
 
-def version_cell(state: PackageState) -> str:
-    """Format the version cell as plain text — useful for tests/logging.
+@dataclass(frozen=True)
+class PackageChangeSet:
+    """Install / remove / upgrade diff between targets and detected state."""
 
-    The dialog renders versions with inline Rich styling via
-    :func:`format_package_row`; this is the un-styled equivalent.
-    """
+    to_install: tuple[str, ...] = ()
+    to_remove: tuple[str, ...] = ()
+    to_upgrade: tuple[str, ...] = ()
+
+    @property
+    def has_changes(self) -> bool:
+        return bool(self.to_install or self.to_remove or self.to_upgrade)
+
+    def install_names(self) -> list[str]:
+        """Names to pass to apt install (new installs + upgrades)."""
+        return [*self.to_install, *self.to_upgrade]
+
+
+def compute_package_changes(
+    packages: Sequence[CuratedPackage],
+    states: dict[str, PackageState],
+    targets: dict[str, bool],
+) -> PackageChangeSet:
+    """Compute pending install, remove, and upgrade sets from picker targets."""
+    to_install: list[str] = []
+    to_remove: list[str] = []
+    to_upgrade: list[str] = []
+    for pkg in packages:
+        state = states.get(pkg.name)
+        if state is None:
+            continue
+        target = targets.get(pkg.name, state.is_installed)
+        if state.state == InstallState.UPGRADE_AVAILABLE and target:
+            to_upgrade.append(pkg.name)
+        elif target and not state.is_installed:
+            to_install.append(pkg.name)
+        elif not target and state.is_installed:
+            to_remove.append(pkg.name)
+    return PackageChangeSet(
+        tuple(to_install),
+        tuple(to_remove),
+        tuple(to_upgrade),
+    )
+
+
+def format_pending_changes_summary(changes: PackageChangeSet) -> tuple[str, bool]:
+    """Return ``(status_text, highlight)`` for the picker status bar."""
+    if not changes.has_changes:
+        return "No pending changes.", False
+    parts: list[str] = []
+    if changes.to_install:
+        parts.append(f"+{len(changes.to_install)} install")
+    if changes.to_upgrade:
+        parts.append(f"↑{len(changes.to_upgrade)} upgrade")
+    if changes.to_remove:
+        parts.append(f"-{len(changes.to_remove)} remove")
+    names = [*changes.to_install, *changes.to_upgrade, *changes.to_remove]
+    summary = " · ".join(parts)
+    if len(names) <= 4:
+        summary = f"{summary} ({', '.join(names)})"
+    return f"Pending: {summary} — Enter to apply", True
+
+
+def format_system_state(state: PackageState) -> str:
+    """Human-readable install/version status for detail views."""
     if state.state == InstallState.UPGRADE_AVAILABLE:
-        return f"{state.installed_version} {UPGRADE_INDICATOR} {state.candidate_version}"
+        inst = state.installed_version or "unknown"
+        cand = state.candidate_version or "unknown"
+        return f"Installed ({inst}); upgrade available ({cand})"
+    if state.state == InstallState.INSTALLED:
+        ver = state.installed_version or "unknown version"
+        return f"Installed ({ver})"
+    if state.candidate_version:
+        return f"Not installed (available: {state.candidate_version})"
+    return "Not installed"
+
+
+def format_selection_status(state: PackageState, target_checked: bool) -> str:
+    """Explain what will happen to this package when the user applies."""
+    if state.state == InstallState.UPGRADE_AVAILABLE and target_checked:
+        return "Will upgrade on apply"
+    if state.is_installed and target_checked:
+        return "Keep installed (no change)"
+    if not state.is_installed and not target_checked:
+        return "Leave absent (no change)"
+    if state.is_installed and not target_checked:
+        return "Marked for removal"
+    return "Marked for install"
+
+
+def format_package_detail_body(
+    pkg: CuratedPackage,
+    state: PackageState,
+    *,
+    group_name: str = "",
+    group_description: str = "",
+    target_checked: bool | None = None,
+) -> str:
+    """Build scrollable detail text for the package info overlay."""
+    target = target_checked if target_checked is not None else state.is_installed
+    lines: list[str] = []
+
+    if group_name:
+        lines.append(f"Category: {group_name}")
+    if group_description:
+        lines.append(group_description)
+    if lines:
+        lines.append("")
+
+    lines.extend(
+        [
+            "Description",
+            pkg.description or "(none)",
+            "",
+            f"Package type: {pkg.type}",
+            f"System state: {format_system_state(state)}",
+            f"Selection: {format_selection_status(state, target)}",
+        ]
+    )
+
+    if pkg.locked:
+        lines.extend(["", "Locked in catalog — cannot be removed via the picker."])
+    if pkg.type == "github_release" and pkg.github_repo:
+        lines.append(f"GitHub repository: {pkg.github_repo}")
+    if pkg.version:
+        lines.append(f"Catalog version pin: {pkg.version}")
+
+    return "\n".join(lines)
+
+
+def version_cell(state: PackageState) -> str:
+    """Format the version cell as plain text — useful for tests/logging."""
+    if state.state == InstallState.UPGRADE_AVAILABLE:
+        inst = state.installed_version or ""
+        cand = state.candidate_version or ""
+        return f"{inst} {UPGRADE_ARROW} {cand}"
     if state.state == InstallState.INSTALLED:
         return state.installed_version or ""
-    return ""
+    return state.candidate_version or ""
+
+
+def _append_version_part(
+    text: Text,
+    state: PackageState,
+    *,
+    width: int,
+    upgrade_style: str,
+) -> None:
+    """Append a fixed-width version column (may include styled upgrade target)."""
+    if width <= 0:
+        return
+
+    if state.state == InstallState.UPGRADE_AVAILABLE:
+        inst = state.installed_version or ""
+        cand = state.candidate_version or ""
+        prefix = f"{inst} {UPGRADE_ARROW} "
+        full = prefix + cand
+        if len(full) > width:
+            text.append(_truncate_display(full, width))
+            return
+        text.append(prefix)
+        text.append(cand, style=upgrade_style)
+        text.append(" " * (width - len(full)))
+        return
+
+    plain = version_cell(state)
+    text.append(plain.ljust(width))
+
+
+def format_package_picker_line(
+    pkg: CuratedPackage,
+    state: PackageState,
+    target_checked: bool,
+    *,
+    name_width: int = 20,
+    version_width: int = 18,
+    desc_width: int = 44,
+    upgrade_style: str = "bold green",
+) -> Text:
+    """Build one picker row: checkbox, name, version, and truncated description.
+
+    Example::
+
+        ``[↑] docker-ce          27.3.1 → 29.5.2   Docker Engine — daemon, CLI…``
+    """
+    cb = checkbox_for(state, target_checked)
+    name = _truncate_display(pkg.name, name_width).ljust(name_width)
+    line = Text()
+    line.append(f"{cb} {name}  ")
+    _append_version_part(
+        line,
+        state,
+        width=version_width,
+        upgrade_style=upgrade_style,
+    )
+    if desc_width > 0:
+        line.append(f"  {_truncate_display(pkg.description, desc_width)}")
+    return line
 
 
 def format_package_row(
@@ -271,33 +472,16 @@ def format_package_row(
     version_width: int = 12,
     upgrade_style: str = "bold green",
 ) -> Text:
-    """Build the *first* line of a package row as a Rich Text.
-
-    Layout (one line):
-
-        ``[x] <name padded> │ <version padded> [│ ↑ <new_version>]``
-
-    The candidate-version tail is rendered with ``upgrade_style`` so the
-    new version pops in the dialog's theme-success colour. The
-    description goes on a separate row rendered by the dialog directly.
-    """
-    cb = checkbox_for(state, target_checked)
-    name = pkg.name.ljust(name_width)
-    text = Text()
-    text.append(f"{cb} {name}{COLUMN_SEPARATOR}")
-
-    if state.state == InstallState.UPGRADE_AVAILABLE:
-        installed = (state.installed_version or "").ljust(version_width)
-        text.append(installed)
-        text.append(UPGRADE_PREFIX)
-        text.append(state.candidate_version or "", style=upgrade_style)
-    elif state.state == InstallState.INSTALLED:
-        text.append(state.installed_version or "")
-    elif state.candidate_version:
-        # Not installed but we know the candidate — show what apt WOULD
-        # install. The [ ] checkbox already says it's not on the system.
-        text.append(state.candidate_version)
-    return text
+    """Backward-compatible alias — name + version only (no description column)."""
+    return format_package_picker_line(
+        pkg,
+        state,
+        target_checked,
+        name_width=name_width,
+        version_width=version_width,
+        desc_width=0,
+        upgrade_style=upgrade_style,
+    )
 
 
 def format_catalog_freshness(updated_at: datetime | None, now: datetime) -> str:
@@ -531,6 +715,9 @@ def query_catalog_state(catalog: Catalog) -> dict[str, PackageState]:
     packages (``github_release``, ``script``) each run their own
     ``version_command`` to detect installed version, compared against the
     catalog's pinned ``version`` to spot upgrades.
+
+    This function performs blocking subprocess I/O. Textual callers should
+    use :func:`query_catalog_state_async` so the event loop stays responsive.
     """
     apt_names = [p.name for p in catalog.iter_packages() if p.type == "apt"]
     states = query_apt_state(apt_names)
@@ -539,6 +726,11 @@ def query_catalog_state(catalog: Catalog) -> dict[str, PackageState]:
             continue
         states[pkg.name] = query_command_state(pkg)
     return states
+
+
+async def query_catalog_state_async(catalog: Catalog) -> dict[str, PackageState]:
+    """Like :func:`query_catalog_state`, but runs in a worker thread."""
+    return await asyncio.to_thread(query_catalog_state, catalog)
 
 
 def query_command_state(pkg: CuratedPackage) -> PackageState:

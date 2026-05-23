@@ -32,6 +32,7 @@ class ZBoxTUI(App):
     def __init__(self, debug_svg: bool = False, theme_override: str | None = None) -> None:
         super().__init__()
         self._authenticated = False
+        self._session_sudo_password: str | None = None
         self.debug_svg = debug_svg
         self._menu_handlers: dict[str, Callable[[ZBoxTUI], None]] = {}
 
@@ -73,6 +74,20 @@ class ZBoxTUI(App):
             log.debug("Debug screenshot saved: %s", filename)
 
         self.call_after_refresh(_take_screenshot)
+
+    @property
+    def session_sudo_password(self) -> str | None:
+        """Validated sudo password for this process, or ``None`` if not entered yet."""
+        return self._session_sudo_password
+
+    def remember_sudo_password(self, password: str) -> None:
+        """Cache the sudo password for the lifetime of this zBoxTUI session."""
+        self._session_sudo_password = password
+        log.debug("Cached sudo password for this session")
+
+    def clear_sudo_password(self) -> None:
+        """Drop the cached sudo password."""
+        self._session_sudo_password = None
 
     def set_menu_handlers(self, handlers: dict[str, Callable[[ZBoxTUI], None]]) -> None:
         """Register action_id → handler mappings (called by MenuScreen on mount)."""
