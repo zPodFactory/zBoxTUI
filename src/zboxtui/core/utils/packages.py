@@ -293,7 +293,10 @@ def format_package_row(
         text.append(state.candidate_version or "", style=upgrade_style)
     elif state.state == InstallState.INSTALLED:
         text.append(state.installed_version or "")
-    # NOT_INSTALLED: nothing after the separator.
+    elif state.candidate_version:
+        # Not installed but we know the candidate — show what apt WOULD
+        # install. The [ ] checkbox already says it's not on the system.
+        text.append(state.candidate_version)
     return text
 
 
@@ -492,33 +495,126 @@ def _state_from_versions(installed: str | None, candidate: str | None) -> Packag
     Comparison happens on the *raw* strings (so the package manager's
     full version semantics decide whether it's an upgrade), but the
     versions stored on PackageState are simplified for display.
+    `candidate_version` is captured for every state — even NOT_INSTALLED —
+    so the dialog can show "this is what would be installed".
     """
+    candidate_short = (
+        simplify_apt_version(candidate)
+        if candidate and candidate != "(none)"
+        else None
+    )
+
     if installed in (None, "", "(none)"):
-        return PackageState(state=InstallState.NOT_INSTALLED)
-    is_upgrade = bool(candidate and candidate not in ("(none)", installed))
+        return PackageState(
+            state=InstallState.NOT_INSTALLED,
+            candidate_version=candidate_short,
+        )
     installed_short = simplify_apt_version(installed) if installed else None
-    candidate_short = simplify_apt_version(candidate) if candidate else None
+    is_upgrade = bool(candidate and candidate not in ("(none)", installed))
     if is_upgrade:
         return PackageState(
             state=InstallState.UPGRADE_AVAILABLE,
             installed_version=installed_short,
             candidate_version=candidate_short,
         )
-    return PackageState(state=InstallState.INSTALLED, installed_version=installed_short)
+    return PackageState(
+        state=InstallState.INSTALLED,
+        installed_version=installed_short,
+        candidate_version=candidate_short,
+    )
 
 
 def query_catalog_state(catalog: Catalog) -> dict[str, PackageState]:
     """Resolve the install state of every package in ``catalog``.
 
-    Currently only ``apt`` packages get real detection — the trimmed initial
-    catalog is apt-only, and ``github_release``/``script`` runtime detection
-    is part of Phase 4. Non-apt packages fall back to NOT_INSTALLED until
-    that lands.
+    apt packages are batched into one ``apt-cache policy`` call; non-apt
+    packages (``github_release``, ``script``) each run their own
+    ``version_command`` to detect installed version, compared against the
+    catalog's pinned ``version`` to spot upgrades.
     """
     apt_names = [p.name for p in catalog.iter_packages() if p.type == "apt"]
     states = query_apt_state(apt_names)
-    # Non-apt packages: placeholder until Phase 4 wires up version_command.
     for pkg in catalog.iter_packages():
-        if pkg.name not in states:
-            states[pkg.name] = PackageState(state=InstallState.NOT_INSTALLED)
+        if pkg.type == "apt":
+            continue
+        states[pkg.name] = query_command_state(pkg)
     return states
+
+
+def query_command_state(pkg: CuratedPackage) -> PackageState:
+    """Detect install state for a non-apt curated package.
+
+    The package's catalog entry tells us how to find its installed
+    version (``version_command`` + ``version_pattern``), and what
+    version is "current" (``version`` field — refreshed by the catalog
+    repo's CI). We compare the two and emit the right PackageState.
+
+    Order of detection:
+      1. If ``version_command`` runs and matches ``version_pattern``,
+         use the captured group as the installed version.
+      2. Else, if ``binary`` is set and that path exists, treat as
+         installed with no version detail.
+      3. Otherwise NOT_INSTALLED.
+    """
+    candidate = pkg.version
+    installed_version = _detect_installed_version(pkg)
+
+    if installed_version is None:
+        return PackageState(state=InstallState.NOT_INSTALLED, candidate_version=candidate)
+
+    if candidate and candidate != installed_version:
+        return PackageState(
+            state=InstallState.UPGRADE_AVAILABLE,
+            installed_version=installed_version,
+            candidate_version=candidate,
+        )
+    return PackageState(
+        state=InstallState.INSTALLED,
+        installed_version=installed_version,
+        candidate_version=candidate,
+    )
+
+
+def _detect_installed_version(pkg: CuratedPackage) -> str | None:
+    """Run pkg.version_command and extract the version via pkg.version_pattern.
+
+    Returns the captured version string, or None if anything fails (binary
+    missing, exit non-zero, regex doesn't match). The caller treats None
+    as "not installed".
+
+    If no version_command is set, fall back to checking ``pkg.binary``:
+    file exists → return empty string (a falsy-but-not-None sentinel
+    that callers can treat as "installed, version unknown" via the empty
+    truthy distinction). For simplicity in the trimmed apt-only catalog,
+    that fallback simply means "treat as installed" without a version.
+    """
+    import re
+    import subprocess
+
+    if pkg.version_command:
+        try:
+            proc = subprocess.run(
+                pkg.version_command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            return None
+        if proc.returncode != 0:
+            return None
+        if pkg.version_pattern:
+            match = re.search(pkg.version_pattern, proc.stdout)
+            if match:
+                try:
+                    return match.group(1)
+                except IndexError:
+                    return None
+            return None
+        return proc.stdout.strip().splitlines()[0] if proc.stdout.strip() else None
+
+    if pkg.binary and Path(pkg.binary).exists():
+        return ""  # installed, version unknown
+    return None

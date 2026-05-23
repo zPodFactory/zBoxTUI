@@ -179,12 +179,20 @@ def _apt(name: str = "htop", desc: str = "Process viewer") -> CuratedPackage:
     return CuratedPackage(type="apt", name=name, description=desc)
 
 
-def test_format_row_apt_not_installed() -> None:
+def test_format_row_apt_not_installed_no_candidate() -> None:
     pkg = _apt(name="tmux", desc="Terminal multiplexer")
     state = PackageState(state=InstallState.NOT_INSTALLED)
     row = format_package_row(pkg, state, target_checked=False, name_width=10, version_width=10)
-    # First line only: empty version cell after the separator.
+    # No candidate → version cell is empty after the separator.
     assert row.plain == "[ ] tmux       │ "
+
+
+def test_format_row_apt_not_installed_shows_candidate() -> None:
+    """When apt knows the candidate version, show it even for not-installed."""
+    pkg = _apt(name="tmux", desc="Terminal multiplexer")
+    state = PackageState(state=InstallState.NOT_INSTALLED, candidate_version="3.3a")
+    row = format_package_row(pkg, state, target_checked=False, name_width=10, version_width=10)
+    assert row.plain == "[ ] tmux       │ 3.3a"
 
 
 def test_format_row_apt_installed_no_upgrade() -> None:
