@@ -55,6 +55,21 @@ log = get_logger("menu.packages")
 _NAME_WIDTH = 25
 _VERSION_WIDTH = 12
 
+
+class _CursorScroll(VerticalScroll, inherit_bindings=False):
+    """A VerticalScroll that doesn't steal arrow keys or take focus.
+
+    Textual's default VerticalScroll grabs up/down/pageup/etc. to scroll
+    its viewport. Inside a modal that uses arrow keys for cursor
+    navigation, that focus theft means the user's keystrokes move the
+    scrollbar instead of the selection. With ``inherit_bindings=False``
+    no scroll bindings are inherited, and ``can_focus=False`` keeps
+    Textual's auto-focus from latching onto it. The dialog handles
+    scrolling explicitly via scroll_visible() whenever the cursor moves.
+    """
+
+    can_focus = False
+
 # Dev/demo: ZBOXTUI_DEMO_UPGRADES=1 overlays synthetic upgrades so the
 # green "↑ new" styling is visible without waiting for a real upgrade.
 _DEMO_UPGRADES: dict[str, tuple[str, str]] = {
@@ -251,6 +266,23 @@ class PackagesDialog(ModalScreen[None]):
         color: $z-fg-faint;
     }
 
+    /* Pending changes: red tint for removes, green for installs. The
+     * theme's $z-error / $z-success values are pastel-ish in
+     * catppuccin-mocha; on themes with darker error/success the rows
+     * still read as distinct from neutral. */
+    PackagesDialog .pkg-name-row.--pending-remove,
+    PackagesDialog .pkg-desc-row.--pending-remove {
+        color: $z-error;
+    }
+
+    PackagesDialog .pkg-name-row.--pending-install,
+    PackagesDialog .pkg-desc-row.--pending-install {
+        color: $z-success;
+    }
+
+    /* Cursor highlight wins over state colours but preserves the
+     * red/green tint for the foreground so pending changes stay
+     * legible when the cursor lands on them. */
     PackagesDialog .pkg-name-row.--cursor,
     PackagesDialog .pkg-desc-row.--cursor {
         background: $z-panel;
@@ -260,6 +292,18 @@ class PackagesDialog(ModalScreen[None]):
     PackagesDialog .pkg-name-row.--cursor.--missing,
     PackagesDialog .pkg-desc-row.--cursor.--missing {
         color: $z-panel-fg-dim;
+    }
+
+    PackagesDialog .pkg-name-row.--cursor.--pending-remove,
+    PackagesDialog .pkg-desc-row.--cursor.--pending-remove {
+        color: $z-error;
+        text-style: bold;
+    }
+
+    PackagesDialog .pkg-name-row.--cursor.--pending-install,
+    PackagesDialog .pkg-desc-row.--cursor.--pending-install {
+        color: $z-success;
+        text-style: bold;
     }
 
     PackagesDialog #freshness {
@@ -305,7 +349,7 @@ class PackagesDialog(ModalScreen[None]):
                 yield Static(self._freshness_text(), id="freshness")
                 yield Static("")
 
-            with VerticalScroll(id="dialog-body"):
+            with _CursorScroll(id="dialog-body"):
                 if self._load_error is not None:
                     yield Static(f"Could not load the package catalog:\n{self._load_error}")
                     return
@@ -327,7 +371,7 @@ class PackagesDialog(ModalScreen[None]):
                         state = self._states.get(
                             pkg.name, PackageState(state=InstallState.NOT_INSTALLED)
                         )
-                        modifier = self._row_class(state, pkg_index)
+                        modifier = self._row_class(state, state.is_installed, pkg_index)
                         yield Static(
                             self._render_name_line(pkg, state),
                             classes=f"pkg-name-row {modifier}",
@@ -387,16 +431,23 @@ class PackagesDialog(ModalScreen[None]):
     def _rerender_row(self, pkg_index: int, pkg: CuratedPackage) -> None:
         state = self._states[pkg.name]
         target = self._targets.get(pkg.name, state.is_installed)
-        modifier = self._row_class(state, pkg_index)
+        modifier = self._row_class(state, target, pkg_index)
         name_row = self.query_one(f"#pkg-name-{pkg_index}", Static)
         desc_row = self.query_one(f"#pkg-desc-{pkg_index}", Static)
         name_row.update(self._render_name_line(pkg, state, target_override=target))
         name_row.set_classes(f"pkg-name-row {modifier}")
         desc_row.set_classes(f"pkg-desc-row {modifier}")
 
-    def _row_class(self, state: PackageState, pkg_index: int) -> str:
+    def _row_class(self, state: PackageState, target: bool, pkg_index: int) -> str:
         parts = []
-        if not state.is_installed:
+        # Pending changes take visual priority over the
+        # installed-vs-missing distinction since they're the actionable
+        # signal: "this row will change when Apply runs."
+        if state.is_installed and not target:
+            parts.append("--pending-remove")
+        elif not state.is_installed and target:
+            parts.append("--pending-install")
+        elif not state.is_installed:
             parts.append("--missing")
         if pkg_index == self._cursor:
             parts.append("--cursor")
