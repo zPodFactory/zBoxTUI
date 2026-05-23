@@ -167,7 +167,7 @@ def test_version_cell_shows_arrow_when_upgrade_available() -> None:
         installed_version="0.19.0",
         candidate_version="0.20.0",
     )
-    assert version_cell(state) == "0.19.0 → 0.20.0 ↑"
+    assert version_cell(state) == "0.19.0 ↑ 0.20.0"
 
 
 # ---------------------------------------------------------------------------
@@ -183,14 +183,15 @@ def test_format_row_apt_not_installed() -> None:
     pkg = _apt(name="tmux", desc="Terminal multiplexer")
     state = PackageState(state=InstallState.NOT_INSTALLED)
     row = format_package_row(pkg, state, target_checked=False, name_width=10, version_width=10)
-    assert row == "[ ] tmux                  Terminal multiplexer"
+    # First line only: empty version cell after the separator.
+    assert row.plain == "[ ] tmux       │ "
 
 
 def test_format_row_apt_installed_no_upgrade() -> None:
     pkg = _apt(name="htop", desc="Process viewer")
     state = PackageState(state=InstallState.INSTALLED, installed_version="3.0.5")
     row = format_package_row(pkg, state, target_checked=True, name_width=10, version_width=10)
-    assert row == "[x] htop       3.0.5      Process viewer"
+    assert row.plain == "[x] htop       │ 3.0.5"
 
 
 def test_format_row_upgrade_available_keeps_arrow_inline() -> None:
@@ -200,25 +201,42 @@ def test_format_row_upgrade_available_keeps_arrow_inline() -> None:
         installed_version="0.19.0",
         candidate_version="0.20.0",
     )
-    row = format_package_row(pkg, state, target_checked=True, name_width=10, version_width=22)
-    # Both versions, arrow, indicator, then description all present
-    assert row.startswith("[x] eza        0.19.0 → 0.20.0 ↑")
-    assert row.endswith("Modern ls")
+    row = format_package_row(pkg, state, target_checked=True, name_width=10, version_width=10)
+    # Both versions, arrow indicator, all on the first line.
+    assert row.plain == "[x] eza        │ 0.19.0     │ ↑ 0.20.0"
+
+
+def test_format_row_upgrade_styles_only_the_new_version() -> None:
+    pkg = _apt(name="eza", desc="Modern ls")
+    state = PackageState(
+        state=InstallState.UPGRADE_AVAILABLE,
+        installed_version="0.19.0",
+        candidate_version="0.20.0",
+    )
+    row = format_package_row(
+        pkg, state, target_checked=True,
+        name_width=10, version_width=10,
+        upgrade_style="bold green",
+    )
+    # Exactly one styled span, applied to the candidate version "0.20.0".
+    styled = [s for s in row.spans if s.style]
+    assert len(styled) == 1
+    span = styled[0]
+    assert row.plain[span.start:span.end] == "0.20.0"
 
 
 def test_format_row_user_marks_installed_for_removal() -> None:
     pkg = _apt(name="lsd", desc="LSDeluxe")
     state = PackageState(state=InstallState.INSTALLED, installed_version="1.0.0")
     row = format_package_row(pkg, state, target_checked=False, name_width=8, version_width=10)
-    assert row.startswith("[-] lsd      1.0.0      LSDeluxe")
+    assert row.plain == "[-] lsd      │ 1.0.0"
 
 
 def test_format_row_user_marks_absent_for_install() -> None:
     pkg = _apt(name="ripgrep", desc="Recursive grep")
     state = PackageState(state=InstallState.NOT_INSTALLED)
     row = format_package_row(pkg, state, target_checked=True, name_width=10, version_width=10)
-    assert row.startswith("[+] ripgrep")
-    assert row.endswith("Recursive grep")
+    assert row.plain == "[+] ripgrep    │ "
 
 
 # ---------------------------------------------------------------------------

@@ -23,6 +23,7 @@ from textual.widgets import Static
 from ..utils.logging import get_logger
 from ..utils.packages import (
     CatalogError,
+    CuratedPackage,
     InstallState,
     PackageState,
     format_catalog_freshness,
@@ -38,8 +39,8 @@ if TYPE_CHECKING:
 
 log = get_logger("menu.packages")
 
-_NAME_WIDTH = 23
-_VERSION_WIDTH = 22
+_NAME_WIDTH = 25
+_VERSION_WIDTH = 12
 
 # Dev/demo: when ZBOXTUI_DEMO_UPGRADES=1 is set, replace the real
 # apt state for these packages with a synthetic upgrade so the user
@@ -88,20 +89,26 @@ class PackagesDialog(ModalScreen[None]):
         margin-top: 0;
     }
 
-    PackagesDialog .pkg-row {
+    /* Two Statics per package: name line (line 1) + description line
+     * (line 2). The .--missing modifier dims both lines together for
+     * not-installed packages so they recede visually. The upgrade row
+     * paints just the "↑ new" segment in $z-success via inline Rich
+     * Text styling (see _success_color()), so we don't need a separate
+     * upgrade colour class here. */
+    PackagesDialog .pkg-name-row {
         height: 1;
         color: $z-fg;
     }
 
-    /* Installed-and-current and upgrade-available both use the normal
-     * foreground; the upgrade row paints the "→ new ↑" segment green
-     * inline via Rich Text styling (see _render_row). */
-    PackagesDialog .pkg-row.--installed,
-    PackagesDialog .pkg-row.--upgrade {
-        color: $z-fg;
+    PackagesDialog .pkg-desc-row {
+        height: 1;
+        padding-left: 4;
+        color: $z-fg-dim;
+        margin-bottom: 1;
     }
 
-    PackagesDialog .pkg-row.--missing {
+    PackagesDialog .pkg-name-row.--missing,
+    PackagesDialog .pkg-desc-row.--missing {
         color: $z-fg-faint;
     }
 
@@ -154,9 +161,15 @@ class PackagesDialog(ModalScreen[None]):
                         state = self._states.get(
                             pkg.name, PackageState(state=InstallState.NOT_INSTALLED)
                         )
+                        modifier = self._row_class(state)
                         yield Static(
-                            self._render_row(pkg, state),
-                            classes=f"pkg-row {self._row_class(state)}",
+                            self._render_name_line(pkg, state),
+                            classes=f"pkg-name-row {modifier}",
+                            markup=False,
+                        )
+                        yield Static(
+                            pkg.description,
+                            classes=f"pkg-desc-row {modifier}",
                             markup=False,
                         )
 
@@ -180,13 +193,18 @@ class PackagesDialog(ModalScreen[None]):
             return
         self._states = query_catalog_state(self._catalog)
         self._maybe_inject_demo_upgrades()
-        # Rebuild row text in place. The compose() block already laid out
-        # the Statics; we walk them via the catalog's iter_packages() order.
-        rows = list(self.query(".pkg-row").results(Static))
-        for row, pkg in zip(rows, self._catalog.iter_packages(), strict=False):
+        # Rewrite the name lines in place; description lines never change.
+        # Both lines share the --missing modifier so they fade together.
+        name_rows = list(self.query(".pkg-name-row").results(Static))
+        desc_rows = list(self.query(".pkg-desc-row").results(Static))
+        for name_row, desc_row, pkg in zip(
+            name_rows, desc_rows, self._catalog.iter_packages(), strict=False
+        ):
             state = self._states[pkg.name]
-            row.update(self._render_row(pkg, state))
-            row.set_classes(f"pkg-row {self._row_class(state)}")
+            modifier = self._row_class(state)
+            name_row.update(self._render_name_line(pkg, state))
+            name_row.set_classes(f"pkg-name-row {modifier}")
+            desc_row.set_classes(f"pkg-desc-row {modifier}")
 
     def _maybe_inject_demo_upgrades(self) -> None:
         """If ``ZBOXTUI_DEMO_UPGRADES=1`` is set, overlay synthetic upgrades.
@@ -206,42 +224,16 @@ class PackagesDialog(ModalScreen[None]):
                     candidate_version=candidate,
                 )
 
-    def _render_row(self, pkg, state: PackageState) -> Text:
-        """Build the Rich Text for one row.
-
-        Plain rendering comes from format_package_row(); when an upgrade
-        is available, the ``→ new ↑`` segment is restyled bold + theme
-        success color so the new version stands out.
-        """
-        plain = format_package_row(
+    def _render_name_line(self, pkg: CuratedPackage, state: PackageState) -> Text:
+        """First-line (checkbox + name + version + optional ↑ new) Rich Text."""
+        return format_package_row(
             pkg,
             state,
             target_checked=state.is_installed,
             name_width=_NAME_WIDTH,
             version_width=_VERSION_WIDTH,
+            upgrade_style=f"bold {self._success_color()}",
         )
-        text = Text(plain)
-
-        if (
-            state.state == InstallState.UPGRADE_AVAILABLE
-            and state.installed_version
-            and state.candidate_version
-        ):
-            # Locate "<installed> → <candidate> ↑" in the row and stylize
-            # just the "→ <candidate> ↑" tail. The version column has
-            # fixed width so the prefix appears at a predictable offset,
-            # but searching by string is robust to width changes.
-            marker = f"{state.installed_version} "
-            arrow_idx = plain.find(marker)
-            if arrow_idx >= 0:
-                segment_start = arrow_idx + len(marker)
-                # Find the indicator that closes the segment.
-                indicator_idx = plain.find(" ↑", segment_start)
-                if indicator_idx >= 0:
-                    segment_end = indicator_idx + len(" ↑")
-                    color = self._success_color()
-                    text.stylize(f"bold {color}", segment_start, segment_end)
-        return text
 
     def _success_color(self) -> str:
         """Hex of the active theme's z-success colour (fallback: 'green')."""

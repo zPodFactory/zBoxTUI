@@ -12,8 +12,7 @@ This module is intentionally split into two halves:
   rendering and "last updated" string can be exercised by unit tests
   without spinning up the full app.
 
-The dialog widget that consumes these lives in core/menu_items/packages.py
-(to be built in Phase 1 of the Configure Packages work).
+The dialog widget that consumes these lives in core/menu_items/packages.py.
 """
 
 from __future__ import annotations
@@ -26,6 +25,8 @@ from datetime import UTC, datetime
 from enum import Enum, auto
 from pathlib import Path
 from typing import Literal
+
+from rich.text import Text
 
 SUPPORTED_SCHEMA_VERSION = 1
 PackageType = Literal["apt", "github_release", "script"]
@@ -231,8 +232,9 @@ CHECKBOX_ABSENT = "[ ]"
 CHECKBOX_PENDING_INSTALL = "[+]"
 CHECKBOX_PENDING_REMOVE = "[-]"
 
-# How the version column reads in each state.
-UPGRADE_ARROW = "→"
+# Visual separators used in the row formatter.
+COLUMN_SEPARATOR = " │ "
+UPGRADE_PREFIX = " │ ↑ "
 UPGRADE_INDICATOR = "↑"
 
 
@@ -248,12 +250,13 @@ def checkbox_for(state: PackageState, target_checked: bool) -> str:
 
 
 def version_cell(state: PackageState) -> str:
-    """Format the version column for one row."""
+    """Format the version cell as plain text — useful for tests/logging.
+
+    The dialog renders versions with inline Rich styling via
+    :func:`format_package_row`; this is the un-styled equivalent.
+    """
     if state.state == InstallState.UPGRADE_AVAILABLE:
-        return (
-            f"{state.installed_version} {UPGRADE_ARROW} "
-            f"{state.candidate_version} {UPGRADE_INDICATOR}"
-        )
+        return f"{state.installed_version} {UPGRADE_INDICATOR} {state.candidate_version}"
     if state.state == InstallState.INSTALLED:
         return state.installed_version or ""
     return ""
@@ -264,23 +267,34 @@ def format_package_row(
     state: PackageState,
     target_checked: bool,
     *,
-    name_width: int = 22,
-    version_width: int = 22,
-) -> str:
-    """Render one picker row as a fixed-width string.
+    name_width: int = 25,
+    version_width: int = 12,
+    upgrade_style: str = "bold green",
+) -> Text:
+    """Build the *first* line of a package row as a Rich Text.
 
-    Columns, left-aligned and padded to fixed widths:
-      ``[x] <name padded> <version padded> <description>``
+    Layout (one line):
 
-    The function does **no** truncation if a column overflows — it pads
-    short content but lets long content push the next column right. This
-    keeps the test assertions easy to read; the dialog clips visually via
-    Textual layout.
+        ``[x] <name padded> │ <version padded> [│ ↑ <new_version>]``
+
+    The candidate-version tail is rendered with ``upgrade_style`` so the
+    new version pops in the dialog's theme-success colour. The
+    description goes on a separate row rendered by the dialog directly.
     """
     cb = checkbox_for(state, target_checked)
     name = pkg.name.ljust(name_width)
-    ver = version_cell(state).ljust(version_width)
-    return f"{cb} {name} {ver} {pkg.description}"
+    text = Text()
+    text.append(f"{cb} {name}{COLUMN_SEPARATOR}")
+
+    if state.state == InstallState.UPGRADE_AVAILABLE:
+        installed = (state.installed_version or "").ljust(version_width)
+        text.append(installed)
+        text.append(UPGRADE_PREFIX)
+        text.append(state.candidate_version or "", style=upgrade_style)
+    elif state.state == InstallState.INSTALLED:
+        text.append(state.installed_version or "")
+    # NOT_INSTALLED: nothing after the separator.
+    return text
 
 
 def format_catalog_freshness(updated_at: datetime | None, now: datetime) -> str:
