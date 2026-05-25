@@ -121,7 +121,14 @@ def _catppuccin_mocha() -> Theme:
 
 
 def _vmware_esxi() -> Theme:
-    """VMware ESXi DCUI — yellow panels, grey chrome."""
+    """VMware ESXi DCUI — yellow panels, grey chrome.
+
+    Status colours are tuned for the bright #ffd700 body: the original
+    dark variants (006400/8b0000) read as muddy against gold, and the
+    warning b8860b was just darker yellow — invisible on the bg. The
+    current picks are saturated enough to register as alerts but stay
+    legible as foreground text on both the yellow body and grey panels.
+    """
     return _make_theme(
         name="vmware-esxi",
         bg="#ffd700", crust="#000000", mantle="#3a3a3a",
@@ -130,7 +137,7 @@ def _vmware_esxi() -> Theme:
         panel_fg="#ffffff", panel_fg_dim="#cccccc", panel_fg_faint="#aaaaaa",
         scrollbar="#aaaaaa",
         accent="#5a5a5a", accent_fg="#ffffff", title="#ffffff",
-        success="#006400", warning="#b8860b", error="#8b0000",
+        success="#15803d", warning="#b45309", error="#b91c1c",
     )
 
 
@@ -176,20 +183,6 @@ def _tokyo_night() -> Theme:
     )
 
 
-def _textual_dark() -> Theme:
-    """Textual's house dark theme — deep blue accent."""
-    return _make_theme(
-        name="textual-dark",
-        bg="#1e1e1e", crust="#101010", mantle="#1e1e1e",
-        panel="#272727", panel_focus="#3a3a3a", border="#4a4a4a",
-        fg="#e0e0e0", fg_dim="#b0b0b0", fg_faint="#707070",
-        panel_fg="#e0e0e0", panel_fg_dim="#b0b0b0", panel_fg_faint="#707070",
-        scrollbar="#4a4a4a",
-        accent="#0178d4", accent_fg="#ffffff", title="#0178d4",
-        success="#4ebf71", warning="#ffa62b", error="#ba3c5b",
-    )
-
-
 def _atom_one_dark() -> Theme:
     """Atom One Dark — the classic editor theme."""
     return _make_theme(
@@ -212,7 +205,6 @@ def all_themes() -> list[Theme]:
         _nord(),
         _gruvbox(),
         _tokyo_night(),
-        _textual_dark(),
         _atom_one_dark(),
     ]
 

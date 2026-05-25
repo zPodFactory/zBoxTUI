@@ -198,7 +198,7 @@ log_level = {DEFAULT_LOG_LEVEL}
 
 [theme]
 # Built-in themes: catppuccin-mocha (default), vmware-esxi, nord,
-# gruvbox, tokyo-night, textual-dark, atom-one-dark
+# gruvbox, tokyo-night, atom-one-dark
 name = {DEFAULT_THEME_NAME}
 """
 

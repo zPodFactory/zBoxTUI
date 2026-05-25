@@ -33,7 +33,7 @@ def main() -> None:
         metavar="NAME",
         help="Override the configured theme for this run. Built-in themes: "
         "catppuccin-mocha (default), vmware-esxi, nord, gruvbox, tokyo-night, "
-        "textual-dark, atom-one-dark.",
+        "atom-one-dark.",
     )
     args = parser.parse_args()
 
