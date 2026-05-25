@@ -9,7 +9,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import ProgressBar, Static
 
-from ..utils.system import get_system_info
+from ..utils.system import get_load_percent, get_memory_usage, get_system_info
 
 if TYPE_CHECKING:
     from ...app import ZBoxTUI
@@ -106,7 +106,10 @@ class DashboardScreen(Screen):
         background: $z-mantle;
     }
 
+    /* Fixed-width labels so the CPU Load and Memory bars start at
+     * the same column regardless of label content. */
     DashboardScreen .header-stat-row .stat-label {
+        width: 8;
         padding-right: 1;
     }
 
@@ -157,15 +160,24 @@ class DashboardScreen(Screen):
             yield Static("")
             yield Static(info.hostname)
             yield Static("")
+            # Keep the previous one-liners with the static facts
+            # (model + cores, total memory) and add a live bar below
+            # each.
+            yield Static(f"{info.cpu_info} ({info.cpu_count} cores)")
             yield from self._stat_row(
-                f"CPU Load ({info.cpu_count} cores)",
+                "Load",
                 info.cpu_load_percent,
                 kind="header",
+                bar_id="cpu-load-bar",
+                percent_id="cpu-load-pct",
             )
+            yield Static(info.memory_total)
             yield from self._stat_row(
-                f"Memory ({info.memory_total})",
+                "Memory",
                 info.memory_percent,
                 kind="header",
+                bar_id="memory-bar",
+                percent_id="memory-pct",
             )
 
         # Main content area (yellow with white border left/right/bottom)
@@ -209,12 +221,21 @@ class DashboardScreen(Screen):
                 yield Static("<F12> Shut Down/Restart", id="footer-right")
 
     @staticmethod
-    def _stat_row(label: str, percent: float, *, kind: str):
+    def _stat_row(
+        label: str,
+        percent: float,
+        *,
+        kind: str,
+        bar_id: str | None = None,
+        percent_id: str | None = None,
+    ):
         """Yield widgets for one ``label / bar / percent`` row.
 
         ``kind`` is either ``"header"`` (CPU/memory in the top panel —
         bar styled for the grey panel background) or ``"storage"``
         (filesystem rows in the bottom panel — yellow-body styled).
+        Optional ``bar_id`` / ``percent_id`` let callers later
+        ``query_one`` the bar + percentage to refresh them.
         """
         row_classes = f"stat-row {kind}-row {kind}-bar-row"
         bar_classes = f"stat-bar {kind}-bar"
@@ -226,10 +247,15 @@ class DashboardScreen(Screen):
                 show_eta=False,
                 show_percentage=False,
                 classes=bar_classes,
+                id=bar_id,
             )
             bar.update(progress=clamped)
             yield bar
-            yield Static(f"{percent:.0f}%", classes="stat-percent")
+            yield Static(
+                f"{percent:.0f}%",
+                classes="stat-percent",
+                id=percent_id,
+            )
 
     @staticmethod
     def _zbox_header(info) -> str:
@@ -258,8 +284,26 @@ class DashboardScreen(Screen):
         return line
 
     def on_mount(self) -> None:
-        """Take debug screenshot on mount if enabled."""
+        """Take debug screenshot on mount + start the live-stat refresh tick."""
         self.app.save_debug_screenshot("dashboard")
+        # 2 seconds is responsive enough for memory while staying calm
+        # for the 1-min load average (which by definition only moves
+        # over the minute anyway). Cheap: two /proc reads per tick.
+        self.set_interval(2.0, self._refresh_stats)
+
+    def _refresh_stats(self) -> None:
+        """Re-sample CPU load + memory and update the header bars."""
+        load = get_load_percent()
+        mem_used, mem_total = get_memory_usage()
+        mem_pct = 100.0 * mem_used / mem_total if mem_total else 0.0
+
+        cpu_bar = self.query_one("#cpu-load-bar", ProgressBar)
+        cpu_bar.update(progress=max(0.0, min(100.0, load)))
+        self.query_one("#cpu-load-pct", Static).update(f"{load:.0f}%")
+
+        mem_bar = self.query_one("#memory-bar", ProgressBar)
+        mem_bar.update(progress=max(0.0, min(100.0, mem_pct)))
+        self.query_one("#memory-pct", Static).update(f"{mem_pct:.0f}%")
 
     def action_customize(self) -> None:
         """Handle F2 - open customize/login screen."""
