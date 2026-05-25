@@ -79,7 +79,14 @@ class DashboardScreen(Screen):
     DashboardScreen .storage-bar {
         width: 1fr;
         height: 1;
-        margin: 0 1;
+        margin: 0 0 0 1;
+    }
+
+    /* Textual's Bar defaults to width: 32 — force it to fill the
+     * storage-bar's 1fr instead so the inner bar reaches the row's
+     * right edge with no trailing dead space before the percentage. */
+    DashboardScreen .storage-bar Bar {
+        width: 1fr;
     }
 
     DashboardScreen .storage-bar Bar > .bar--bar {
@@ -93,8 +100,9 @@ class DashboardScreen(Screen):
     }
 
     DashboardScreen .storage-sizes {
-        width: auto;
+        width: 5;
         height: 1;
+        text-align: right;
         padding-right: 1;
     }
 
