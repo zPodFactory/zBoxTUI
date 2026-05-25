@@ -107,11 +107,15 @@ class DashboardScreen(Screen):
     }
 
     /* Two-column "System Load | Memory Usage" row at the bottom of
-     * the header, mirroring the Network / Storage split downstairs. */
+     * the header, mirroring the Network / Storage split downstairs.
+     * Docked to the bottom of the header panel with a 1-line margin
+     * so the bars sit just above the border separator. */
     DashboardScreen #header-stats-row {
         layout: horizontal;
         height: 1;
         width: 100%;
+        dock: bottom;
+        margin-bottom: 1;
     }
 
     DashboardScreen .header-stat-cell {
