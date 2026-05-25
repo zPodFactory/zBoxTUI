@@ -106,10 +106,26 @@ class DashboardScreen(Screen):
         background: $z-mantle;
     }
 
-    /* Fixed-width labels so the CPU Load and Memory bars start at
-     * the same column regardless of label content. */
-    DashboardScreen .header-stat-row .stat-label {
-        width: 8;
+    /* Two-column "System Load | Memory Usage" row at the bottom of
+     * the header, mirroring the Network / Storage split downstairs. */
+    DashboardScreen #header-stats-row {
+        layout: horizontal;
+        height: 1;
+        width: 100%;
+    }
+
+    DashboardScreen .header-stat-cell {
+        layout: horizontal;
+        width: 1fr;
+        height: 1;
+    }
+
+    /* Pin both cell labels to the longest of "System Load" /
+     * "Memory Usage" so the two bars start at the same column
+     * relative to their cell. */
+    DashboardScreen .header-stat-cell-label {
+        width: 13;
+        height: 1;
         padding-right: 1;
     }
 
@@ -160,25 +176,23 @@ class DashboardScreen(Screen):
             yield Static("")
             yield Static(info.hostname)
             yield Static("")
-            # Keep the previous one-liners with the static facts
-            # (model + cores, total memory) and add a live bar below
-            # each.
             yield Static(f"{info.cpu_info} ({info.cpu_count} cores)")
-            yield from self._stat_row(
-                "Load",
-                info.cpu_load_percent,
-                kind="header",
-                bar_id="cpu-load-bar",
-                percent_id="cpu-load-pct",
-            )
             yield Static(info.memory_total)
-            yield from self._stat_row(
-                "Memory",
-                info.memory_percent,
-                kind="header",
-                bar_id="memory-bar",
-                percent_id="memory-pct",
-            )
+            # Two columns: System Load (left) | Memory Usage (right)
+            # — mirrors the Network / Storage split in the bottom panel.
+            with Horizontal(id="header-stats-row"):
+                yield from self._header_stat_cell(
+                    "System Load",
+                    info.cpu_load_percent,
+                    bar_id="cpu-load-bar",
+                    percent_id="cpu-load-pct",
+                )
+                yield from self._header_stat_cell(
+                    "Memory Usage",
+                    info.memory_percent,
+                    bar_id="memory-bar",
+                    percent_id="memory-pct",
+                )
 
         # Main content area (yellow with white border left/right/bottom)
         with Vertical(id="dashboard-content"):
@@ -219,6 +233,34 @@ class DashboardScreen(Screen):
             with Horizontal(id="dashboard-footer"):
                 yield Static("<F2> Customize System/View Logs", id="footer-left")
                 yield Static("<F12> Shut Down/Restart", id="footer-right")
+
+    @staticmethod
+    def _header_stat_cell(
+        label: str,
+        percent: float,
+        *,
+        bar_id: str,
+        percent_id: str,
+    ):
+        """Yield one ``label / bar / percent`` cell for the header's
+        2-column stats row."""
+        clamped = max(0.0, min(100.0, percent))
+        with Horizontal(classes="header-stat-cell"):
+            yield Static(label, classes="header-stat-cell-label")
+            bar = ProgressBar(
+                total=100,
+                show_eta=False,
+                show_percentage=False,
+                classes="stat-bar header-stat-bar",
+                id=bar_id,
+            )
+            bar.update(progress=clamped)
+            yield bar
+            yield Static(
+                f"{percent:.0f}%",
+                classes="stat-percent",
+                id=percent_id,
+            )
 
     @staticmethod
     def _stat_row(
