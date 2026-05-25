@@ -9,7 +9,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
-from ..utils.system import get_system_info
+from ..utils.system import format_size, get_system_info
 
 if TYPE_CHECKING:
     from ...app import ZBoxTUI
@@ -54,8 +54,15 @@ class DashboardScreen(Screen):
     }
 
     DashboardScreen #content-inner {
+        layout: horizontal;
         padding: 1 2;
         height: 1fr;
+    }
+
+    DashboardScreen #content-network,
+    DashboardScreen #content-storage {
+        width: 1fr;
+        height: auto;
     }
 
     DashboardScreen #dashboard-footer {
@@ -95,19 +102,40 @@ class DashboardScreen(Screen):
 
         # Main content area (yellow with white border left/right/bottom)
         with Vertical(id="dashboard-content"):
-            with Vertical(id="content-inner"):
-                yield Static("Network Interfaces:")
-                yield Static("")
-                # Calculate max interface name length for alignment
-                max_name_len = max(len(iface.name) for iface in info.interfaces)
-                for iface in info.interfaces:
-                    # Format: "  name:    IP (GW IP GW)" with right-aligned IP
-                    name_padded = f"{iface.name}:".ljust(max_name_len + 2)
-                    if iface.gateway:
-                        ip_display = f"{iface.ipv4} ({iface.gateway} GW)"
+            with Horizontal(id="content-inner"):
+                with Vertical(id="content-network"):
+                    yield Static("Network Interfaces:")
+                    yield Static("")
+                    max_name_len = (
+                        max(len(iface.name) for iface in info.interfaces)
+                        if info.interfaces
+                        else 0
+                    )
+                    for iface in info.interfaces:
+                        name_padded = f"{iface.name}:".ljust(max_name_len + 2)
+                        if iface.gateway:
+                            ip_display = f"{iface.ipv4} ({iface.gateway} GW)"
+                        else:
+                            ip_display = iface.ipv4
+                        yield Static(f"  {name_padded} {ip_display}")
+
+                with Vertical(id="content-storage"):
+                    yield Static("Storage:")
+                    yield Static("")
+                    if not info.filesystems:
+                        yield Static("  (no disk-backed mounts found)")
                     else:
-                        ip_display = iface.ipv4
-                    yield Static(f"  {name_padded} {ip_display}")
+                        max_mp_len = max(
+                            len(fs.mount_point) for fs in info.filesystems
+                        )
+                        for fs in info.filesystems:
+                            mp_padded = f"{fs.mount_point}".ljust(max_mp_len + 2)
+                            used = format_size(fs.used_bytes)
+                            total = format_size(fs.total_bytes)
+                            yield Static(
+                                f"  {mp_padded} {used} / {total} "
+                                f"({fs.percent:.0f}%)"
+                            )
 
             # Footer keybinds at bottom of yellow section
             with Horizontal(id="dashboard-footer"):

@@ -21,6 +21,21 @@ class NetworkInterface:
 
 
 @dataclass
+class FilesystemInfo:
+    """One mounted filesystem we want to show on the dashboard."""
+
+    device: str        # e.g. "/dev/mapper/vg-root", "/dev/sda1"
+    mount_point: str   # e.g. "/", "/boot"
+    fstype: str        # e.g. "ext4"
+    used_bytes: int
+    total_bytes: int
+
+    @property
+    def percent(self) -> float:
+        return 100.0 * self.used_bytes / self.total_bytes if self.total_bytes else 0.0
+
+
+@dataclass
 class SystemInfo:
     """Container for system information."""
 
@@ -31,6 +46,7 @@ class SystemInfo:
     cpu_info: str
     memory_total: str
     interfaces: list[NetworkInterface]
+    filesystems: list[FilesystemInfo]
 
 
 def get_hostname() -> str:
@@ -229,7 +245,96 @@ def get_system_info() -> SystemInfo:
         cpu_info=get_cpu_info(),
         memory_total=get_memory_info(),
         interfaces=get_network_interfaces(),
+        filesystems=get_filesystems(),
     )
+
+
+# Filesystem types that represent actual disk-backed storage. Anything
+# not in this set (proc, sysfs, tmpfs, cgroup*, devtmpfs, overlayfs,
+# fuse.*, autofs, etc.) is filtered out — the dashboard only shows
+# storage the user might actually fill up.
+_DISK_FSTYPES = frozenset({
+    "ext2", "ext3", "ext4",
+    "xfs",
+    "btrfs",
+    "zfs",
+    "jfs",
+    "reiserfs",
+    "f2fs",
+    "ntfs", "ntfs3",
+    "vfat", "exfat",
+    "nilfs2",
+})
+
+
+def _unescape_mount_field(field: str) -> str:
+    """Decode the ``\\NNN`` octal escapes the kernel writes in /proc/mounts."""
+    # Spaces in mount paths show up as \040, etc. Cheap manual decoder.
+    out: list[str] = []
+    i = 0
+    while i < len(field):
+        if field[i] == "\\" and i + 3 < len(field) and field[i + 1 : i + 4].isdigit():
+            try:
+                out.append(chr(int(field[i + 1 : i + 4], 8)))
+                i += 4
+                continue
+            except ValueError:
+                pass
+        out.append(field[i])
+        i += 1
+    return "".join(out)
+
+
+def get_filesystems() -> list[FilesystemInfo]:
+    """Read /proc/mounts and return real-disk filesystems with usage.
+
+    Pseudo-filesystems (proc, sysfs, tmpfs, etc.) are filtered out via
+    an allow-list of disk-fstype names. Mounts whose statvfs fails are
+    silently skipped. Mount points are de-duplicated (bind mounts can
+    appear twice with the same mount_point) — first one wins.
+    """
+    seen: set[str] = set()
+    result: list[FilesystemInfo] = []
+    try:
+        with open("/proc/mounts", encoding="utf-8") as f:
+            mount_lines = f.readlines()
+    except (FileNotFoundError, PermissionError, OSError):
+        return result
+
+    for line in mount_lines:
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        device = _unescape_mount_field(parts[0])
+        mount_point = _unescape_mount_field(parts[1])
+        fstype = parts[2]
+        if fstype not in _DISK_FSTYPES:
+            continue
+        if mount_point in seen:
+            continue
+        try:
+            stat = os.statvfs(mount_point)
+        except OSError:
+            continue
+        total = stat.f_blocks * stat.f_frsize
+        free = stat.f_bavail * stat.f_frsize
+        used = max(0, total - free)
+        if total == 0:
+            continue
+        seen.add(mount_point)
+        result.append(
+            FilesystemInfo(
+                device=device,
+                mount_point=mount_point,
+                fstype=fstype,
+                used_bytes=used,
+                total_bytes=total,
+            )
+        )
+    # Stable display order: shortest mount point first (/ before /boot
+    # before /var/lib/something).
+    result.sort(key=lambda fs: (len(fs.mount_point), fs.mount_point))
+    return result
 
 
 # Prefixes to exclude when listing physical interfaces
