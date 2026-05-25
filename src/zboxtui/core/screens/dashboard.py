@@ -118,12 +118,12 @@ class DashboardScreen(Screen):
     def _zbox_header(info) -> str:
         """Build the top header line of the dashboard.
 
-        Target shape: ``zBox ({debian_version}) - {pretty_name}``
-        e.g. ``zBox (13.5) - Debian GNU/Linux 13 (trixie)``
+        Target shape: ``zBox {debian_version} - {pretty_name}``
+        e.g. ``zBox 13.5 - Debian GNU/Linux 13 (trixie)``
 
         Fallbacks if either piece is missing (non-Debian / no
         ``/etc/os-release``): the corresponding segment is dropped
-        gracefully — never emit naked parens or a trailing dash.
+        gracefully — never emit a trailing dash or stray spacing.
         """
         # Re-use the (label, ver) pair so we still display something
         # readable on a box without /etc/os-release.
@@ -134,7 +134,7 @@ class DashboardScreen(Screen):
         )
         parts = ["zBox"]
         if info.debian_version:
-            parts.append(f"({info.debian_version})")
+            parts.append(info.debian_version)
         line = " ".join(parts)
         if os_label:
             line = f"{line} - {os_label}"
