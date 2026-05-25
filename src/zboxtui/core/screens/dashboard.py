@@ -65,30 +65,52 @@ class DashboardScreen(Screen):
         height: auto;
     }
 
-    DashboardScreen .storage-row {
+    /* Generic "label + bar + percent" row used in both the header
+     * (CPU / memory) and the bottom storage panel. Defined once,
+     * customised per location via the .stat-bar-* descendants. */
+    DashboardScreen .stat-row {
         height: 1;
         width: 100%;
     }
 
-    DashboardScreen .storage-mp {
+    DashboardScreen .stat-label {
         width: auto;
         height: 1;
-        padding-left: 2;
     }
 
-    DashboardScreen .storage-bar {
+    DashboardScreen .stat-bar {
         width: 1fr;
         height: 1;
         margin: 0 0 0 1;
     }
 
-    /* Textual's Bar defaults to width: 32 — force it to fill the
-     * storage-bar's 1fr instead so the inner bar reaches the row's
-     * right edge with no trailing dead space before the percentage. */
-    DashboardScreen .storage-bar Bar {
+    /* Textual's Bar defaults to width: 32 — force it to fill 1fr so
+     * the bar reaches the row's right edge with no trailing dead
+     * space before the percentage. */
+    DashboardScreen .stat-bar Bar {
         width: 1fr;
     }
 
+    DashboardScreen .stat-percent {
+        width: 5;
+        height: 1;
+        text-align: right;
+        padding-right: 1;
+    }
+
+    /* Header bars sit on $z-panel, so the bar track uses a colour
+     * a bit darker than the panel for contrast. */
+    DashboardScreen .header-stat-bar Bar > .bar--bar,
+    DashboardScreen .header-stat-bar Bar > .bar--complete {
+        color: $z-accent;
+        background: $z-mantle;
+    }
+
+    DashboardScreen .header-stat-row .stat-label {
+        padding-right: 1;
+    }
+
+    /* Storage bars sit on $z-bg (yellow body in vmware-esxi). */
     DashboardScreen .storage-bar Bar > .bar--bar {
         color: $z-accent;
         background: $z-mantle;
@@ -99,11 +121,8 @@ class DashboardScreen(Screen):
         background: $z-mantle;
     }
 
-    DashboardScreen .storage-sizes {
-        width: 5;
-        height: 1;
-        text-align: right;
-        padding-right: 1;
+    DashboardScreen .storage-row .stat-label {
+        padding-left: 2;
     }
 
     DashboardScreen #dashboard-footer {
@@ -138,8 +157,16 @@ class DashboardScreen(Screen):
             yield Static("")
             yield Static(info.hostname)
             yield Static("")
-            yield Static(info.cpu_info)
-            yield Static(info.memory_total)
+            yield from self._stat_row(
+                f"CPU Load ({info.cpu_count} cores)",
+                info.cpu_load_percent,
+                kind="header",
+            )
+            yield from self._stat_row(
+                f"Memory ({info.memory_total})",
+                info.memory_percent,
+                kind="header",
+            )
 
         # Main content area (yellow with white border left/right/bottom)
         with Vertical(id="dashboard-content"):
@@ -170,26 +197,39 @@ class DashboardScreen(Screen):
                             len(fs.mount_point) for fs in info.filesystems
                         )
                         for fs in info.filesystems:
-                            with Horizontal(classes="storage-row"):
-                                mp_padded = fs.mount_point.ljust(max_mp_len)
-                                yield Static(mp_padded, classes="storage-mp")
-                                bar = ProgressBar(
-                                    total=100,
-                                    show_eta=False,
-                                    show_percentage=False,
-                                    classes="storage-bar",
-                                )
-                                bar.update(progress=fs.percent)
-                                yield bar
-                                yield Static(
-                                    f"{fs.percent:.0f}%",
-                                    classes="storage-sizes",
-                                )
+                            yield from self._stat_row(
+                                fs.mount_point.ljust(max_mp_len),
+                                fs.percent,
+                                kind="storage",
+                            )
 
             # Footer keybinds at bottom of yellow section
             with Horizontal(id="dashboard-footer"):
                 yield Static("<F2> Customize System/View Logs", id="footer-left")
                 yield Static("<F12> Shut Down/Restart", id="footer-right")
+
+    @staticmethod
+    def _stat_row(label: str, percent: float, *, kind: str):
+        """Yield widgets for one ``label / bar / percent`` row.
+
+        ``kind`` is either ``"header"`` (CPU/memory in the top panel —
+        bar styled for the grey panel background) or ``"storage"``
+        (filesystem rows in the bottom panel — yellow-body styled).
+        """
+        row_classes = f"stat-row {kind}-row {kind}-bar-row"
+        bar_classes = f"stat-bar {kind}-bar"
+        clamped = max(0.0, min(100.0, percent))
+        with Horizontal(classes=row_classes):
+            yield Static(label, classes="stat-label")
+            bar = ProgressBar(
+                total=100,
+                show_eta=False,
+                show_percentage=False,
+                classes=bar_classes,
+            )
+            bar.update(progress=clamped)
+            yield bar
+            yield Static(f"{percent:.0f}%", classes="stat-percent")
 
     @staticmethod
     def _zbox_header(info) -> str:

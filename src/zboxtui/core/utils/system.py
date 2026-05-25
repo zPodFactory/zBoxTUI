@@ -44,9 +44,19 @@ class SystemInfo:
     os_version: str
     debian_version: str  # Content of /etc/debian_version, "" if absent.
     cpu_info: str
-    memory_total: str
+    cpu_count: int
+    cpu_load_percent: float       # 1-min loadavg / cpu_count * 100
+    memory_total: str             # Human-readable total ("16.0 GB")
+    memory_used_bytes: int
+    memory_total_bytes: int
     interfaces: list[NetworkInterface]
     filesystems: list[FilesystemInfo]
+
+    @property
+    def memory_percent(self) -> float:
+        if self.memory_total_bytes <= 0:
+            return 0.0
+        return 100.0 * self.memory_used_bytes / self.memory_total_bytes
 
 
 def get_hostname() -> str:
@@ -237,13 +247,18 @@ def get_network_interfaces() -> list[NetworkInterface]:
 def get_system_info() -> SystemInfo:
     """Gather all system information."""
     os_name, os_version = get_os_info()
+    mem_used, mem_total = get_memory_usage()
     return SystemInfo(
         hostname=get_hostname(),
         os_name=os_name,
         os_version=os_version,
         debian_version=get_debian_version(),
         cpu_info=get_cpu_info(),
+        cpu_count=get_cpu_count(),
+        cpu_load_percent=get_load_percent(),
         memory_total=get_memory_info(),
+        memory_used_bytes=mem_used,
+        memory_total_bytes=mem_total,
         interfaces=get_network_interfaces(),
         filesystems=get_filesystems(),
     )
@@ -465,6 +480,36 @@ def get_interface_config(iface_name: str) -> InterfaceConfig:
 def get_cpu_count() -> int:
     """Return the number of logical CPUs."""
     return os.cpu_count() or 1
+
+
+def get_load_average() -> tuple[float, float, float]:
+    """Return the system load averages (1, 5, 15 minute) from /proc/loadavg.
+
+    Falls back to (0, 0, 0) if /proc/loadavg can't be read or parsed.
+    On a real Linux box this is a single ~zero-cost read; perfect for
+    a snapshot dashboard that wants a stable "is this box busy?"
+    indicator without sampling /proc/stat twice.
+    """
+    try:
+        with open("/proc/loadavg", encoding="utf-8") as f:
+            parts = f.read().split()
+        return float(parts[0]), float(parts[1]), float(parts[2])
+    except (FileNotFoundError, PermissionError, ValueError, IndexError):
+        return 0.0, 0.0, 0.0
+
+
+def get_load_percent() -> float:
+    """1-minute load average expressed as a percentage of total CPU capacity.
+
+    100% means the runqueue length matches the number of logical CPUs
+    over the last minute. Values above 100 are possible (oversubscribed
+    box) — callers that drive a ProgressBar should clamp visually.
+    """
+    load_1, _, _ = get_load_average()
+    cpu_count = get_cpu_count()
+    if cpu_count <= 0:
+        return 0.0
+    return 100.0 * load_1 / cpu_count
 
 
 def read_cpu_times() -> tuple[int, int]:
