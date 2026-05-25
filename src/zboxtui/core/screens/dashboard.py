@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Static
+from textual.widgets import ProgressBar, Static
 
-from ..utils.system import format_size, get_system_info
+from ..utils.system import get_system_info
 
 if TYPE_CHECKING:
     from ...app import ZBoxTUI
@@ -63,6 +63,39 @@ class DashboardScreen(Screen):
     DashboardScreen #content-storage {
         width: 1fr;
         height: auto;
+    }
+
+    DashboardScreen .storage-row {
+        height: 1;
+        width: 100%;
+    }
+
+    DashboardScreen .storage-mp {
+        width: auto;
+        height: 1;
+        padding-left: 2;
+    }
+
+    DashboardScreen .storage-bar {
+        width: 1fr;
+        height: 1;
+        margin: 0 1;
+    }
+
+    DashboardScreen .storage-bar Bar > .bar--bar {
+        color: $z-accent;
+        background: $z-mantle;
+    }
+
+    DashboardScreen .storage-bar Bar > .bar--complete {
+        color: $z-error;
+        background: $z-mantle;
+    }
+
+    DashboardScreen .storage-sizes {
+        width: auto;
+        height: 1;
+        padding-right: 1;
     }
 
     DashboardScreen #dashboard-footer {
@@ -129,13 +162,21 @@ class DashboardScreen(Screen):
                             len(fs.mount_point) for fs in info.filesystems
                         )
                         for fs in info.filesystems:
-                            mp_padded = f"{fs.mount_point}".ljust(max_mp_len + 2)
-                            used = format_size(fs.used_bytes)
-                            total = format_size(fs.total_bytes)
-                            yield Static(
-                                f"  {mp_padded} {used} / {total} "
-                                f"({fs.percent:.0f}%)"
-                            )
+                            with Horizontal(classes="storage-row"):
+                                mp_padded = fs.mount_point.ljust(max_mp_len)
+                                yield Static(mp_padded, classes="storage-mp")
+                                bar = ProgressBar(
+                                    total=100,
+                                    show_eta=False,
+                                    show_percentage=False,
+                                    classes="storage-bar",
+                                )
+                                bar.update(progress=fs.percent)
+                                yield bar
+                                yield Static(
+                                    f"{fs.percent:.0f}%",
+                                    classes="storage-sizes",
+                                )
 
             # Footer keybinds at bottom of yellow section
             with Horizontal(id="dashboard-footer"):
