@@ -84,10 +84,18 @@ class DashboardScreen(Screen):
 
     def compose(self) -> ComposeResult:
         info = get_system_info()
+        # PRETTY_NAME-based labels carry the version inline, so os_version
+        # is empty in that path — only append it when both halves exist
+        # (the platform.system()/platform.release() fallback).
+        os_label = (
+            f"{info.os_name} {info.os_version}".strip()
+            if info.os_version
+            else info.os_name
+        )
 
         # Header section with system info (gray with white border top/left/right)
         with Vertical(id="dashboard-header"):
-            yield Static(f"zBoxTUI v{__version__} ({info.os_name} {info.os_version})")
+            yield Static(f"zBoxTUI v{__version__} ({os_label})")
             yield Static("")
             yield Static(info.hostname)
             yield Static("")

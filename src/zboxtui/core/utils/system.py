@@ -33,12 +33,39 @@ class SystemInfo:
 
 
 def get_hostname() -> str:
-    """Get the system hostname."""
-    return socket.gethostname()
+    """Get the FQDN, falling back to the short hostname.
+
+    ``socket.getfqdn()`` consults /etc/hosts and the resolver — on a
+    zbox with proper DNS or hosts setup this returns
+    ``host.example.com``. If FQDN resolution fails or returns the
+    short name only, fall back to ``socket.gethostname()`` so we
+    always have something to show.
+    """
+    fqdn = socket.getfqdn()
+    short = socket.gethostname()
+    # getfqdn can return "localhost" or the short name on a box with no
+    # FQDN configured — only prefer it when it actually adds a domain
+    # part beyond the short hostname.
+    if fqdn and "." in fqdn and not fqdn.startswith("localhost"):
+        return fqdn
+    return short
 
 
 def get_os_info() -> tuple[str, str]:
-    """Get OS name and version."""
+    """Get the OS label and (optional) version.
+
+    Prefers ``PRETTY_NAME`` from /etc/os-release (e.g. "Debian GNU/Linux
+    13 (trixie)") returned as ``(pretty_name, "")`` — the pretty name
+    already includes the version. Falls back to ``(platform.system(),
+    platform.release())`` on a box without /etc/os-release.
+    """
+    try:
+        os_release = platform.freedesktop_os_release()
+    except OSError:
+        os_release = {}
+    pretty = os_release.get("PRETTY_NAME")
+    if pretty:
+        return pretty, ""
     return platform.system(), platform.release()
 
 
