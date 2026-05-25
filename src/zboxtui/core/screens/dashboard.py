@@ -9,7 +9,6 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
-from ... import __version__
 from ..utils.system import get_system_info
 
 if TYPE_CHECKING:
@@ -84,18 +83,10 @@ class DashboardScreen(Screen):
 
     def compose(self) -> ComposeResult:
         info = get_system_info()
-        # PRETTY_NAME-based labels carry the version inline, so os_version
-        # is empty in that path — only append it when both halves exist
-        # (the platform.system()/platform.release() fallback).
-        os_label = (
-            f"{info.os_name} {info.os_version}".strip()
-            if info.os_version
-            else info.os_name
-        )
 
         # Header section with system info (gray with white border top/left/right)
         with Vertical(id="dashboard-header"):
-            yield Static(f"zBoxTUI v{__version__} ({os_label})")
+            yield Static(self._zbox_header(info))
             yield Static("")
             yield Static(info.hostname)
             yield Static("")
@@ -122,6 +113,32 @@ class DashboardScreen(Screen):
             with Horizontal(id="dashboard-footer"):
                 yield Static("<F2> Customize System/View Logs", id="footer-left")
                 yield Static("<F12> Shut Down/Restart", id="footer-right")
+
+    @staticmethod
+    def _zbox_header(info) -> str:
+        """Build the top header line of the dashboard.
+
+        Target shape: ``zBox ({debian_version}) - {pretty_name}``
+        e.g. ``zBox (13.5) - Debian GNU/Linux 13 (trixie)``
+
+        Fallbacks if either piece is missing (non-Debian / no
+        ``/etc/os-release``): the corresponding segment is dropped
+        gracefully — never emit naked parens or a trailing dash.
+        """
+        # Re-use the (label, ver) pair so we still display something
+        # readable on a box without /etc/os-release.
+        os_label = (
+            f"{info.os_name} {info.os_version}".strip()
+            if info.os_version
+            else info.os_name
+        )
+        parts = ["zBox"]
+        if info.debian_version:
+            parts.append(f"({info.debian_version})")
+        line = " ".join(parts)
+        if os_label:
+            line = f"{line} - {os_label}"
+        return line
 
     def on_mount(self) -> None:
         """Take debug screenshot on mount if enabled."""

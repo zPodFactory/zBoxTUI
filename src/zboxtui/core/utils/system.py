@@ -27,6 +27,7 @@ class SystemInfo:
     hostname: str
     os_name: str
     os_version: str
+    debian_version: str  # Content of /etc/debian_version, "" if absent.
     cpu_info: str
     memory_total: str
     interfaces: list[NetworkInterface]
@@ -67,6 +68,20 @@ def get_os_info() -> tuple[str, str]:
     if pretty:
         return pretty, ""
     return platform.system(), platform.release()
+
+
+def get_debian_version() -> str:
+    """Return the full Debian point release from /etc/debian_version.
+
+    On Debian this file holds the running point release (e.g. "13.5"),
+    which is more precise than the os-release VERSION_ID. Returns the
+    empty string on non-Debian boxes or read errors.
+    """
+    try:
+        with open("/etc/debian_version", encoding="utf-8") as f:
+            return f.read().strip()
+    except (FileNotFoundError, PermissionError, OSError):
+        return ""
 
 
 def get_cpu_info() -> str:
@@ -210,6 +225,7 @@ def get_system_info() -> SystemInfo:
         hostname=get_hostname(),
         os_name=os_name,
         os_version=os_version,
+        debian_version=get_debian_version(),
         cpu_info=get_cpu_info(),
         memory_total=get_memory_info(),
         interfaces=get_network_interfaces(),
