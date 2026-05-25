@@ -164,7 +164,7 @@ class LoginDialog(ModalScreen[bool | None]):
     LoginDialog .form-input {
         width: 1fr;
         background: $z-mantle;
-        color: $z-fg;
+        color: $z-panel-fg;
         border: none;
         height: 1;
     }
@@ -328,7 +328,7 @@ class PasswordDialog(ModalScreen[bool]):
     PasswordDialog .form-input {
         width: 1fr;
         background: $z-mantle;
-        color: $z-fg;
+        color: $z-panel-fg;
         border: none;
         height: 1;
     }
@@ -939,8 +939,8 @@ class SystemLogsDialog(ModalScreen[None]):
     SystemLogsDialog #log-container {
         height: 1fr;
         max-height: 100%;
-        background: $z-crust;
-        color: $z-fg-dim;
+        background: $z-panel;
+        color: $z-panel-fg-dim;
         padding: 0 1;
         scrollbar-size-horizontal: 0;
     }
@@ -1118,8 +1118,8 @@ class ZBoxLogsDialog(ModalScreen[None]):
     ZBoxLogsDialog #log-container {
         height: 1fr;
         max-height: 100%;
-        background: $z-crust;
-        color: $z-fg-dim;
+        background: $z-panel;
+        color: $z-panel-fg-dim;
         padding: 0 1;
         scrollbar-size-horizontal: 0;
     }
@@ -1396,7 +1396,7 @@ class NetworkConfigDialog(ModalScreen[bool]):
     NetworkConfigDialog .form-input {
         width: 1fr;
         background: $z-mantle;
-        color: $z-fg;
+        color: $z-panel-fg;
         border: none;
         height: 1;
     }

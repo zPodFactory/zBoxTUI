@@ -132,11 +132,16 @@ def _vmware_esxi() -> Theme:
     return _make_theme(
         name="vmware-esxi",
         bg="#ffd700", crust="#000000", mantle="#3a3a3a",
-        panel="#5a5a5a", panel_focus="#4a4a4a", border="#ffffff",
+        panel="#5a5a5a", panel_focus="#6a6a6a", border="#ffffff",
         fg="#000000", fg_dim="#333333", fg_faint="#555555",
         panel_fg="#ffffff", panel_fg_dim="#cccccc", panel_fg_faint="#aaaaaa",
         scrollbar="#aaaaaa",
-        accent="#5a5a5a", accent_fg="#ffffff", title="#ffffff",
+        # accent goes much darker than the panel chrome so selection
+        # bars read clearly on the bright yellow body (the old #5a5a5a
+        # matched the panel and blended visually). panel_focus is
+        # *lighter* than mantle so a focused input pops instead of
+        # going slightly dimmer.
+        accent="#1a1a1a", accent_fg="#ffffff", title="#ffffff",
         success="#15803d", warning="#b45309", error="#b91c1c",
     )
 
