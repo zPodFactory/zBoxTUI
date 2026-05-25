@@ -356,13 +356,16 @@ class ApplyDialog(ModalScreen[bool]):
         row.phase = "active" if percent < 100 else "done"
         row.percent = max(row.percent, percent)
         self._update_package_row(row)
-        if row.phase == "done":
-            verb = "Removed" if row.action == "remove" else "Installed"
-            self._set_overall_status(f"{verb} {row.name}")
-        elif action == "unpacking":
-            self._set_overall_status(f"Unpacking {row.name}…")
-        elif action == "selecting":
-            self._set_overall_status(f"Preparing {row.name}…")
+        # Intermediate install steps still provide useful status sub-text.
+        # The completion branch (phase == "done") used to write "Removed X"
+        # / "Installed X" here, but that read as flicker: it shows for one
+        # frame before the next op's "Removing Y…" header overwrites it.
+        # The per-package bar filling to 100% is the actual completion cue.
+        if row.phase != "done":
+            if action == "unpacking":
+                self._set_overall_status(f"Unpacking {row.name}…")
+            elif action == "selecting":
+                self._set_overall_status(f"Preparing {row.name}…")
 
     def _flush_pending_lines(self) -> None:
         if not self._pending_lines:
