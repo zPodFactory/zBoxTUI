@@ -941,7 +941,10 @@ class SystemLogsDialog(ModalScreen[None]):
         max-height: 100%;
         background: $z-panel;
         color: $z-panel-fg-dim;
-        padding: 0 1;
+        /* Asymmetric padding: 1 left for breathing room, 0 right so the
+         * vertical scrollbar sits flush with the right edge of the grey
+         * panel bg (no visible gap between scrollbar and panel edge). */
+        padding: 0 0 0 1;
         scrollbar-size-horizontal: 0;
     }
     """
@@ -1120,7 +1123,9 @@ class ZBoxLogsDialog(ModalScreen[None]):
         max-height: 100%;
         background: $z-panel;
         color: $z-panel-fg-dim;
-        padding: 0 1;
+        /* See SystemLogsDialog above — scrollbar sits flush with the
+         * panel's right edge instead of leaving a 1-char gap. */
+        padding: 0 0 0 1;
         scrollbar-size-horizontal: 0;
     }
     """
