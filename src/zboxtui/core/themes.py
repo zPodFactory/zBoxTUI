@@ -203,14 +203,14 @@ def _atom_one_dark() -> Theme:
 
 
 def all_themes() -> list[Theme]:
-    """Return every shipped theme, default first."""
+    """Return every shipped theme, sorted by name."""
     return [
-        _catppuccin_mocha(),
-        _vmware_esxi(),
-        _nord(),
-        _gruvbox(),
-        _tokyo_night(),
         _atom_one_dark(),
+        _catppuccin_mocha(),
+        _gruvbox(),
+        _nord(),
+        _tokyo_night(),
+        _vmware_esxi(),
     ]
 
 

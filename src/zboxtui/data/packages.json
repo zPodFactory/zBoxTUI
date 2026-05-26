@@ -1,7 +1,7 @@
 {
   "$schema": "./packages.schema.json",
   "schema_version": 1,
-  "updated_at": "2026-05-22T00:00:00Z",
+  "updated_at": "2026-05-23T00:00:00Z",
   "groups": [
     {
       "name": "System Monitoring",
@@ -46,8 +46,18 @@
       "packages": [
         {
           "type": "apt",
-          "name": "terraform",
-          "description": "Declarative infrastructure provisioning"
+          "name": "boundary",
+          "description": "Identity-based secure access to dynamic infrastructure"
+        },
+        {
+          "type": "apt",
+          "name": "consul",
+          "description": "Service mesh, discovery, and configuration"
+        },
+        {
+          "type": "apt",
+          "name": "nomad",
+          "description": "Workload orchestrator for containers and VMs"
         },
         {
           "type": "apt",
@@ -56,8 +66,24 @@
         },
         {
           "type": "apt",
+          "name": "terraform",
+          "description": "Declarative infrastructure provisioning"
+        },
+        {
+          "type": "apt",
           "name": "vault",
           "description": "Secrets management and identity-based access"
+        }
+      ]
+    },
+    {
+      "name": "Microsoft",
+      "description": "Packages from the Microsoft packages.microsoft.com APT repository.",
+      "packages": [
+        {
+          "type": "apt",
+          "name": "powershell",
+          "description": "PowerShell 7 — cross-platform shell and scripting"
         }
       ]
     },

@@ -217,7 +217,7 @@ class LoginDialog(ModalScreen[bool | None]):
                 yield Static("Authentication Required", id="dialog-title")
                 yield Static("")
                 yield Static(
-                    f"Enter root password for {self._hostname}.",
+                    "Enter root password.",
                     id="dialog-subtitle",
                 )
                 yield Static("")

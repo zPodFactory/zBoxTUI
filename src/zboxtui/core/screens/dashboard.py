@@ -236,12 +236,15 @@ class DashboardScreen(Screen):
                 with Vertical(id="content-network", classes=network_classes):
                     yield Static("Network Interfaces:")
                     yield Static("")
+                    visible_interfaces = [
+                        iface for iface in info.interfaces if not self._is_virtual_iface(iface.name)
+                    ]
                     max_name_len = (
-                        max(len(iface.name) for iface in info.interfaces)
-                        if info.interfaces
+                        max(len(iface.name) for iface in visible_interfaces)
+                        if visible_interfaces
                         else 0
                     )
-                    for iface in info.interfaces:
+                    for iface in visible_interfaces:
                         name_padded = f"{iface.name}:".ljust(max_name_len + 2)
                         if iface.gateway:
                             ip_display = f"{iface.ipv4} ({iface.gateway} GW)"
@@ -335,6 +338,19 @@ class DashboardScreen(Screen):
                 classes="stat-percent",
                 id=percent_id,
             )
+
+    @staticmethod
+    def _is_virtual_iface(name: str) -> bool:
+        """Filter docker / libvirt / container-veth interfaces from
+        the dashboard's network panel.
+
+        Configure Network and the other dialogs still see the full
+        list — only the at-a-glance dashboard hides them so a box
+        running 8 docker containers doesn't drown out ``eth0``.
+        """
+        if name in {"docker0", "docker_gwbridge"}:
+            return True
+        return any(name.startswith(prefix) for prefix in ("br-", "virbr", "veth"))
 
     @staticmethod
     def _zbox_header(info) -> str:
