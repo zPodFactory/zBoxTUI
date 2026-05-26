@@ -5,11 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ..utils.logging import get_logger
-from ..widgets.dcui_dialog import (
-    MessageDialog,
-    NetworkConfigDialog,
-    NetworkInterfaceDialog,
-)
+from ..utils.system_control import NETWORKING_RESTART_CMD
+from ..widgets.dcui_dialog import NetworkConfigDialog, NetworkInterfaceDialog
+from .privileged_flow import run_confirmed_privileged_command
 
 if TYPE_CHECKING:
     from ...app import ZBoxTUI
@@ -32,12 +30,20 @@ def show_network_config_dialog(app: ZBoxTUI) -> None:
 
 
 def show_restart_network_dialog(app: ZBoxTUI) -> None:
-    """Show the restart-network confirmation (placeholder)."""
-    log.info("Opening Restart Network dialog")
-    app.push_screen(
-        MessageDialog(
-            "Restart Network",
-            "This will restart all network services.\n\n"
-            "Feature not yet implemented.",
+    """Restart ``networking.service`` after operator confirmation."""
+    log.info("Opening Restart Network confirmation")
+    run_confirmed_privileged_command(
+        app,
+        confirm_title="Restart Network",
+        confirm_message=(
+            "Restart the networking service?\n\n"
+            "This applies /etc/network/interfaces changes and may "
+            "briefly interrupt connectivity."
         ),
+        argv=NETWORKING_RESTART_CMD,
+        ok_title="Network Restarted",
+        fail_title="Restart Failed",
+        no_privilege_title="Cannot Restart Network",
+        ok_message="Network services restarted.",
+        timeout=60,
     )

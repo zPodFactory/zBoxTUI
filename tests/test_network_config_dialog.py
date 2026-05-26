@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import pytest
+from textual.widgets import Input, Static
 
 from zboxtui.app import ZBoxTUI
 from zboxtui.core.widgets.dcui_dialog import NetworkConfigDialog, _NetworkFocusStatic
-from textual.widgets import Input, Static
 
 
 @pytest.mark.asyncio

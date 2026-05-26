@@ -35,7 +35,7 @@
           "minLength": 1
         },
         "description": {
-          "description": "Optional one-liner explaining what this group is for. Not rendered today; kept so the file documents itself.",
+          "description": "Optional one-liner shown under the group header in the package picker.",
           "type": "string"
         },
         "packages": {

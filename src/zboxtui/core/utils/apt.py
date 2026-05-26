@@ -133,9 +133,7 @@ def is_apt_status_line(line: str) -> bool:
     if _APT_STATUS_LINE.match(normalized):
         return True
     # Percentage-only progress, e.g. "(Reading database ... 45%"
-    if re.search(r"\d+%\)?\s*$", normalized) and "Reading" in normalized:
-        return True
-    return False
+    return bool(re.search(r"\d+%\)?\s*$", normalized) and "Reading" in normalized)
 
 
 def _emit_terminal_fragments(

@@ -12,7 +12,6 @@ with two actions:
 
 from __future__ import annotations
 
-import contextlib
 import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -26,7 +25,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Static
 
 from ..utils.apt import AptOperation, plan_operations
-from ..utils.config import get_config
+from ..utils.config import OFFICIAL_CATALOG_URL, get_config
 from ..utils.logging import get_logger
 from ..utils.packages import (
     CatalogError,
@@ -43,7 +42,7 @@ from ..utils.packages import (
     resolve_catalog_path,
     shipped_catalog_path,
 )
-from ..utils.privilege import Privilege, detect_privilege
+from ..utils.privilege import NO_PRIVILEGE_MSG, Privilege, detect_privilege
 from ..widgets.apply_dialog import ApplyDialog
 from ..widgets.dcui_dialog import DCUI_DIALOG_CSS, MessageDialog
 from ..widgets.dcui_menu import DCUIMenu, MenuItem
@@ -57,12 +56,6 @@ log = get_logger("menu.packages")
 _NAME_WIDTH = 20
 _VERSION_WIDTH = 18
 _DESC_WIDTH = 44
-
-_NO_PRIVILEGE_MSG = (
-    "You need root or sudo access to install or remove packages.\n"
-    "Relaunch zboxtui as root, or add yourself to the sudo group."
-)
-
 
 def _push_apply_dialog(
     app: ZBoxTUI,
@@ -93,32 +86,6 @@ def _push_apply_dialog(
         app.call_after_refresh(push)
 
 
-def _defer_push_apply_dialog(
-    app: ZBoxTUI,
-    operations: list[AptOperation],
-    privilege: Privilege,
-    *,
-    password: str | None = None,
-    on_complete=None,
-    catalog_refresh_url: str | None = None,
-) -> None:
-    """Push :class:`ApplyDialog` after the current UI frame completes.
-
-    Never push modals synchronously from another modal's dismiss callback —
-    Textual deadlocks. ``call_after_refresh`` on the app schedules the push
-    safely once the screen stack has settled.
-    """
-    _push_apply_dialog(
-        app,
-        operations,
-        privilege,
-        password=password,
-        on_complete=on_complete,
-        immediate=False,
-        catalog_refresh_url=catalog_refresh_url,
-    )
-
-
 def _finish_privileged_launch(
     app: ZBoxTUI,
     operations: list[AptOperation],
@@ -134,7 +101,7 @@ def _finish_privileged_launch(
     if privilege == Privilege.NONE:
         if on_abort is not None:
             on_abort()
-        app.push_screen(MessageDialog(no_privilege_title, _NO_PRIVILEGE_MSG))
+        app.push_screen(MessageDialog(no_privilege_title, NO_PRIVILEGE_MSG))
         return
 
     def launch(password: str | None) -> None:
@@ -199,14 +166,11 @@ def _launch_privileged_apply(
 
 
 def _catalog_refresh_url() -> str:
-    url = get_config().catalog_url
-    if not url:
-        url = shipped_catalog_path().as_uri()
-        log.info(
-            "No catalog_url configured; refreshing from shipped catalog at %s",
-            url,
-        )
-    return url
+    url = get_config().catalog_url.strip()
+    if url:
+        return url
+    log.info("catalog_url empty; using official catalog at %s", OFFICIAL_CATALOG_URL)
+    return OFFICIAL_CATALOG_URL
 
 
 class _CursorScroll(VerticalScroll, inherit_bindings=False):

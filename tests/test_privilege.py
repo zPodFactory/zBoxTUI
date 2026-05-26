@@ -11,7 +11,6 @@ import pytest
 from zboxtui.core.utils import privilege as pv
 from zboxtui.core.utils.privilege import (
     Privilege,
-    banner_for,
     build_apt_command,
     detect_privilege,
 )
@@ -160,13 +159,3 @@ def test_build_command_none_raises() -> None:
         build_apt_command(["apt-get", "install", "-y", "htop"], Privilege.NONE)
 
 
-# ---------------------------------------------------------------------------
-# banner
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("level", list(Privilege))
-def test_banner_for_every_level_is_non_empty(level: Privilege) -> None:
-    text = banner_for(level)
-    assert text
-    assert isinstance(text, str)

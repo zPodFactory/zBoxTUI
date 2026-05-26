@@ -1,17 +1,13 @@
-"""Tests for the curated-package catalog loader and display formatters.
-
-The dialog widget that actually uses these doesn't exist yet (Phase 1
-of the Configure Packages work); locking the *display logic* down with
-unit tests first means the widget integration is mostly plumbing.
-"""
+"""Tests for the curated-package catalog loader and display formatters."""
 
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from rich.text import Text
 
 from zboxtui.core.utils.packages import (
     CHECKBOX_ABSENT,
@@ -24,14 +20,11 @@ from zboxtui.core.utils.packages import (
     CuratedPackage,
     InstallState,
     PackageState,
-    PackageChangeSet,
     checkbox_for,
     compute_package_changes,
     format_catalog_freshness,
     format_package_detail_body,
     format_package_picker_line,
-    format_package_row,
-    format_pending_changes_summary,
     load_catalog,
     simplify_apt_version,
     version_cell,
@@ -58,7 +51,7 @@ def test_load_catalog_parses_groups_and_packages() -> None:
 
 def test_load_catalog_parses_updated_at_as_aware_datetime() -> None:
     cat = load_catalog(SAMPLE_CATALOG)
-    assert cat.updated_at == datetime(2026, 5, 19, 8, 30, tzinfo=timezone.utc)
+    assert cat.updated_at == datetime(2026, 5, 19, 8, 30, tzinfo=UTC)
 
 
 def test_load_catalog_per_type_optional_fields_land_on_dataclass() -> None:
@@ -176,13 +169,6 @@ def test_compute_package_changes_detects_install_remove_and_upgrade() -> None:
     assert changes.install_names() == ["newpkg", "uppkg"]
 
 
-def test_format_pending_changes_summary_lists_names_when_few() -> None:
-    changes = PackageChangeSet(to_install=("bat",), to_upgrade=("htop",))
-    text, highlight = format_pending_changes_summary(changes)
-    assert "bat" in text and "htop" in text
-    assert highlight is True
-
-
 def test_format_package_detail_body_includes_full_description() -> None:
     pkg = CuratedPackage(
         type="apt",
@@ -235,10 +221,22 @@ def _apt(name: str = "htop", desc: str = "Process viewer") -> CuratedPackage:
     return CuratedPackage(type="apt", name=name, description=desc)
 
 
+def _row(
+    pkg: CuratedPackage,
+    state: PackageState,
+    target_checked: bool,
+    **kwargs: int | str,
+) -> Text:
+    """Picker row without the description column (legacy row tests)."""
+    return format_package_picker_line(
+        pkg, state, target_checked, desc_width=0, **kwargs  # type: ignore[arg-type]
+    )
+
+
 def test_format_row_apt_not_installed_no_candidate() -> None:
     pkg = _apt(name="tmux", desc="Terminal multiplexer")
     state = PackageState(state=InstallState.NOT_INSTALLED)
-    row = format_package_row(pkg, state, target_checked=False, name_width=10, version_width=10)
+    row = _row(pkg, state, target_checked=False, name_width=10, version_width=10)
     assert row.plain == "[ ] tmux                  "
 
 
@@ -246,14 +244,14 @@ def test_format_row_apt_not_installed_shows_candidate() -> None:
     """When apt knows the candidate version, show it even for not-installed."""
     pkg = _apt(name="tmux", desc="Terminal multiplexer")
     state = PackageState(state=InstallState.NOT_INSTALLED, candidate_version="3.3a")
-    row = format_package_row(pkg, state, target_checked=False, name_width=10, version_width=10)
+    row = _row(pkg, state, target_checked=False, name_width=10, version_width=10)
     assert row.plain == "[ ] tmux        3.3a      "
 
 
 def test_format_row_apt_installed_no_upgrade() -> None:
     pkg = _apt(name="htop", desc="Process viewer")
     state = PackageState(state=InstallState.INSTALLED, installed_version="3.0.5")
-    row = format_package_row(pkg, state, target_checked=True, name_width=10, version_width=10)
+    row = _row(pkg, state, target_checked=True, name_width=10, version_width=10)
     assert row.plain == "[x] htop        3.0.5     "
 
 
@@ -264,7 +262,7 @@ def test_format_row_upgrade_available_shows_arrow() -> None:
         installed_version="0.19.0",
         candidate_version="0.20.0",
     )
-    row = format_package_row(pkg, state, target_checked=True, name_width=10, version_width=16)
+    row = _row(pkg, state, target_checked=True, name_width=10, version_width=16)
     assert row.plain == "[↑] eza         0.19.0 → 0.20.0 "
 
 
@@ -275,9 +273,12 @@ def test_format_row_upgrade_styles_only_the_new_version() -> None:
         installed_version="0.19.0",
         candidate_version="0.20.0",
     )
-    row = format_package_row(
-        pkg, state, target_checked=True,
-        name_width=10, version_width=16,
+    row = _row(
+        pkg,
+        state,
+        target_checked=True,
+        name_width=10,
+        version_width=16,
         upgrade_style="bold green",
     )
     # Exactly one styled span, applied to the candidate version "0.20.0".
@@ -290,14 +291,14 @@ def test_format_row_upgrade_styles_only_the_new_version() -> None:
 def test_format_row_user_marks_installed_for_removal() -> None:
     pkg = _apt(name="lsd", desc="LSDeluxe")
     state = PackageState(state=InstallState.INSTALLED, installed_version="1.0.0")
-    row = format_package_row(pkg, state, target_checked=False, name_width=8, version_width=10)
+    row = _row(pkg, state, target_checked=False, name_width=8, version_width=10)
     assert row.plain == "[-] lsd       1.0.0     "
 
 
 def test_format_row_user_marks_absent_for_install() -> None:
     pkg = _apt(name="ripgrep", desc="Recursive grep")
     state = PackageState(state=InstallState.NOT_INSTALLED)
-    row = format_package_row(pkg, state, target_checked=True, name_width=10, version_width=10)
+    row = _row(pkg, state, target_checked=True, name_width=10, version_width=10)
     assert row.plain == "[+] ripgrep               "
 
 
@@ -359,7 +360,7 @@ def test_simplify_does_not_strip_colon_inside_text() -> None:
 # ---------------------------------------------------------------------------
 
 
-NOW = datetime(2026, 5, 22, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 5, 22, 12, 0, tzinfo=UTC)
 
 
 def test_freshness_none_means_unknown() -> None:
@@ -367,22 +368,22 @@ def test_freshness_none_means_unknown() -> None:
 
 
 def test_freshness_today() -> None:
-    same_day = datetime(2026, 5, 22, 8, 0, tzinfo=timezone.utc)
+    same_day = datetime(2026, 5, 22, 8, 0, tzinfo=UTC)
     assert format_catalog_freshness(same_day, NOW) == "Last update: 2026-05-22 (today)"
 
 
 def test_freshness_yesterday() -> None:
-    y = datetime(2026, 5, 21, 12, 0, tzinfo=timezone.utc)
+    y = datetime(2026, 5, 21, 12, 0, tzinfo=UTC)
     assert format_catalog_freshness(y, NOW) == "Last update: 2026-05-21 (yesterday)"
 
 
 def test_freshness_few_days_ago() -> None:
-    d = datetime(2026, 5, 19, 12, 0, tzinfo=timezone.utc)
+    d = datetime(2026, 5, 19, 12, 0, tzinfo=UTC)
     assert format_catalog_freshness(d, NOW) == "Last update: 2026-05-19 (3 days ago)"
 
 
 def test_freshness_two_months_appends_refresh_warning() -> None:
-    d = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+    d = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
     s = format_catalog_freshness(d, NOW)
     assert s.startswith("Last update: 2026-03-01")
     assert "month" in s
@@ -390,7 +391,7 @@ def test_freshness_two_months_appends_refresh_warning() -> None:
 
 
 def test_freshness_year_old() -> None:
-    d = datetime(2024, 5, 1, 12, 0, tzinfo=timezone.utc)
+    d = datetime(2024, 5, 1, 12, 0, tzinfo=UTC)
     s = format_catalog_freshness(d, NOW)
     assert "~2 years ago" in s
     assert "Refresh recommended" in s
@@ -405,5 +406,5 @@ def test_freshness_handles_naive_input_as_utc() -> None:
 
 
 def test_freshness_future_timestamp_shows_date_only() -> None:
-    future = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
+    future = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)
     assert format_catalog_freshness(future, NOW) == "Last update: 2026-06-01"

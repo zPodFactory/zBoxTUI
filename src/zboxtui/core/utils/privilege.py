@@ -1,7 +1,7 @@
-"""Privilege detection + apt subprocess argv construction.
+"""Privilege detection + subprocess argv construction for root commands.
 
-The Configure Packages dialog needs to run ``apt-get`` as root. The
-current user is one of:
+Menu actions (apt, systemctl, reboot) need to run as root. The current
+user is one of:
 
 * **root** (``geteuid() == 0``) — run apt-get directly, no wrapper.
 * **sudo with NOPASSWD** — ``sudo -n apt-get`` succeeds even after clearing
@@ -13,9 +13,9 @@ current user is one of:
   banner asking the user to relaunch as root.
 
 The :func:`detect_privilege` function probes for the right one;
-:func:`build_apt_command` wraps an apt argv accordingly. Both are kept
-narrow and pure (no Textual imports) so they can be unit-tested with
-``subprocess`` monkeypatched.
+:func:`build_privileged_command` wraps a command argv accordingly.
+Both are kept narrow and pure (no Textual imports) so they can be
+unit-tested with ``subprocess`` monkeypatched.
 """
 
 from __future__ import annotations
@@ -26,6 +26,11 @@ import os
 import subprocess
 from collections.abc import Sequence
 from enum import Enum, auto
+
+NO_PRIVILEGE_MSG = (
+    "You need root or sudo access to run this action.\n"
+    "Relaunch zboxtui as root, or add yourself to the sudo group."
+)
 
 
 class Privilege(Enum):
@@ -99,21 +104,8 @@ def detect_privilege() -> Privilege:
     return Privilege.NONE
 
 
-def build_apt_command(
-    argv: Sequence[str],
-    privilege: Privilege,
-) -> list[str]:
-    """Wrap a bare apt-get argv with the right sudo prefix for this privilege.
-
-    Examples:
-        ROOT          ["apt-get", "install", "-y", "htop"]
-                   -> ["apt-get", "install", "-y", "htop"]
-        SUDO_NOPASSWD ["apt-get", "install", "-y", "htop"]
-                   -> ["sudo", "-n", "apt-get", "install", "-y", "htop"]
-        SUDO_PASSWORD ["apt-get", "install", "-y", "htop"]
-                   -> ["sudo", "-S", "-p", "", "apt-get", "install", "-y", "htop"]
-                      (caller pipes the password to stdin)
-    """
+def build_privileged_command(argv: Sequence[str], privilege: Privilege) -> list[str]:
+    """Wrap a command argv with the right sudo prefix for this privilege."""
     cmd = list(argv)
     if privilege == Privilege.ROOT:
         return cmd
@@ -128,15 +120,35 @@ def build_apt_command(
     )
 
 
-def banner_for(privilege: Privilege) -> str:
-    """One-line human-readable description of how we'll run apt."""
-    if privilege == Privilege.ROOT:
-        return "Running as root — apt-get commands run directly."
-    if privilege == Privilege.SUDO_NOPASSWD:
-        return "Sudo NOPASSWD configured — apt-get commands run via sudo."
-    if privilege == Privilege.SUDO_PASSWORD:
-        return "Sudo requires your password — you'll be prompted before Apply."
-    return (
-        "No privilege available. Relaunch zboxtui as root, or add yourself to "
-        "the sudo group, to install or remove packages."
-    )
+def build_apt_command(argv: Sequence[str], privilege: Privilege) -> list[str]:
+    """Alias for :func:`build_privileged_command` (apt-get callers)."""
+    return build_privileged_command(argv, privilege)
+
+
+def run_privileged_command(
+    argv: Sequence[str],
+    privilege: Privilege,
+    *,
+    password: str | None = None,
+    timeout: float = 120,
+) -> tuple[bool, str]:
+    """Run ``argv`` elevated; return ``(ok, message)`` for display in a dialog."""
+    if privilege == Privilege.NONE:
+        return False, NO_PRIVILEGE_MSG
+    try:
+        cmd = build_privileged_command(argv, privilege)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            input=f"{password}\n" if password else None,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "Command timed out"
+    except OSError as exc:
+        return False, str(exc)
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "command failed").strip()
+        return False, err.splitlines()[0] if err else f"Exit code {result.returncode}"
+    return True, "OK"

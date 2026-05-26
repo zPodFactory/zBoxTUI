@@ -31,9 +31,8 @@ test_default_target = 1.1.1.1
 dns_test_default_target = example.com
 
 [packages]
-# Source of the "Refresh Curated List" action in Configure Packages.
-# Leave blank to fall back to the catalog bundled with zboxtui.
-# catalog_url = https://raw.githubusercontent.com/zPodFactory/zbox-packages/main/packages.json
+# Source for "Refresh zBox curated package list" in Configure Packages.
+catalog_url = https://raw.githubusercontent.com/zPodFactory/zBoxTUI/main/zbox-packages.json
 
 [theme]
 # Built-in themes: catppuccin-mocha (default), vmware-esxi, nord,

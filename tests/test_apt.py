@@ -15,13 +15,13 @@ import pytest
 from zboxtui.core.utils.apt import (
     AptOperation,
     ProgressEvent,
+    _emit_terminal_fragments,
     is_apt_status_line,
     normalize_terminal_line,
     parse_progress,
     plan_operations,
     run_streaming,
     run_streaming_sync,
-    _emit_terminal_fragments,
 )
 from zboxtui.core.utils.privilege import Privilege
 

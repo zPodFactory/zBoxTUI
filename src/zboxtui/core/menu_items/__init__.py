@@ -65,7 +65,7 @@ CORE_MENU_ITEMS: list[CoreMenuItem | None] = [
     ),
     CoreMenuItem(
         label="Configure Theme",
-        description="Switch between the available color themes (catppuccin, esxi).",
+        description="Switch between the built-in color themes.",
         handler=show_theme_dialog,
     ),
     CoreMenuItem(

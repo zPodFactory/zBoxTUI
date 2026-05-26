@@ -24,7 +24,7 @@ class DashboardScreen(Screen):
 
     BINDINGS = [
         ("f2", "customize", "Customize System"),
-        ("f12", "shutdown", "Shutdown"),
+        ("f12", "reboot", "Reboot"),
         ("q", "app.quit", "Quit"),
     ]
 
@@ -272,7 +272,7 @@ class DashboardScreen(Screen):
             # Footer keybinds at bottom of yellow section
             with Horizontal(id="dashboard-footer"):
                 yield Static("<F2> Customize System/View Logs", id="footer-left")
-                yield Static("<F12> Shut Down/Restart", id="footer-right")
+                yield Static("<F12> Reboot System", id="footer-right")
 
     @staticmethod
     def _header_stat_cell(
@@ -444,6 +444,6 @@ class DashboardScreen(Screen):
         """Handle F2 - open customize/login screen."""
         self.app.action_show_login()
 
-    def action_shutdown(self) -> None:
-        """Handle F12 - show shutdown dialog."""
-        self.app.action_show_shutdown()
+    def action_reboot(self) -> None:
+        """Handle F12 — confirm and reboot the system."""
+        self.app.action_show_reboot()

@@ -223,7 +223,9 @@ class ApplyDialog(ModalScreen[bool]):
                 with VerticalScroll(id="package-list"):
                     for row in self._packages:
                         label = self._package_label(row)
-                        with Horizontal(classes=f"pkg-row --{row.phase}", id=self._row_id(row.name)):
+                        row_id = self._row_id(row.name)
+                        row_classes = f"pkg-row --{row.phase}"
+                        with Horizontal(classes=row_classes, id=row_id):
                             yield Static(label, classes="pkg-label", id=self._label_id(row.name))
                             yield ProgressBar(
                                 total=100,
@@ -530,10 +532,11 @@ class ApplyDialog(ModalScreen[bool]):
             pkg_part = f" {', '.join(op.packages)}" if op.packages else ""
             header = f"=== {verb}{pkg_part} ==="
             log.info(header)
-            if op.kind == "update":
-                status = f"{verb}…"
-            else:
-                status = f"{verb} {op.packages[0]}…"
+            status = (
+                f"{verb}…"
+                if op.kind == "update"
+                else f"{verb} {op.packages[0]}…"
+            )
             self.app.call_from_thread(self._set_overall_status, status)
             self.app.call_from_thread(
                 self._set_operation_phase,

@@ -5,9 +5,11 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-
 from textual.widgets import ProgressBar, Static
 
+import zboxtui.core.menu_items.packages as pkg_mod
+import zboxtui.core.widgets.apply_dialog as ad
+import zboxtui.core.widgets.sudo_password_dialog as spd
 from zboxtui.app import ZBoxTUI
 from zboxtui.core.menu_items.packages import (
     PackagesDialog,
@@ -22,9 +24,6 @@ from zboxtui.core.widgets.apply_dialog import (
     refresh_workflow_rows,
 )
 from zboxtui.core.widgets.sudo_password_dialog import SudoPasswordDialog
-import zboxtui.core.menu_items.packages as pkg_mod
-import zboxtui.core.widgets.apply_dialog as ad
-import zboxtui.core.widgets.sudo_password_dialog as spd
 
 
 def test_package_rows_from_operations_orders_removes_before_installs() -> None:
@@ -64,12 +63,11 @@ async def test_apply_dialog_mounts_after_sudo_password(
 
         sudo = app.screen
         sudo.query_one("#password-input").value = "secret"
-        with patch.object(spd, "_validate_sudo_password", return_value=True):
-            with patch.object(
-                ad, "run_streaming_sync", return_value=StreamResult(returncode=0)
-            ):
-                sudo.action_submit()
-                await pilot.pause()
+        with patch.object(spd, "_validate_sudo_password", return_value=True), patch.object(
+            ad, "run_streaming_sync", return_value=StreamResult(returncode=0)
+        ):
+            sudo.action_submit()
+            await pilot.pause()
 
         assert isinstance(app.screen, ApplyDialog)
         assert len(list(app.screen.query("#apt-log"))) == 0

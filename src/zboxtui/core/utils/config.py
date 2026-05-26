@@ -36,12 +36,11 @@ SYSTEM_CONFIG_PATH = "/etc/zboxtui/app.conf"
 DEFAULT_LOG_FILE = "zboxtui.log"
 DEFAULT_LOG_LEVEL = "INFO"
 
-# Catalog URL — falls back to the shipped catalog so "Refresh Curated
-# List" is a no-op-but-successful action during local testing rather
-# than an instant failure against a hardcoded /etc/ path that may not
-# exist. Once zPodFactory/zbox-packages goes live this becomes a real
-# https URL.
-DEFAULT_CATALOG_URL = ""
+# Official curated package list (raw GitHub URL — not github.com/blob/…).
+OFFICIAL_CATALOG_URL = (
+    "https://raw.githubusercontent.com/zPodFactory/zBoxTUI/main/zbox-packages.json"
+)
+DEFAULT_CATALOG_URL = OFFICIAL_CATALOG_URL
 
 DEFAULT_DASHBOARD_LIVE_INFO = True
 DEFAULT_DASHBOARD_REFRESH_INTERVAL_SECONDS = 2.0
@@ -287,11 +286,9 @@ test_default_target = {DEFAULT_NETWORK_TEST_TARGET}
 dns_test_default_target = {DEFAULT_DNS_TEST_TARGET}
 
 [packages]
-# Where the Configure Packages "Refresh Curated List" action pulls
-# the catalog from. If left blank (default), Refresh re-copies the
-# catalog bundled with the zboxtui package. Point this at the public
-# https URL once zPodFactory/zbox-packages goes live.
-# catalog_url = https://raw.githubusercontent.com/zPodFactory/zbox-packages/main/packages.json
+# Where "Refresh zBox curated package list" downloads the catalog from.
+# Default: the official list in the zBoxTUI repository (raw.githubusercontent.com).
+catalog_url = {OFFICIAL_CATALOG_URL}
 
 [theme]
 # Built-in themes: catppuccin-mocha (default), vmware-esxi, nord,

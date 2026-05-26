@@ -1,5 +1,5 @@
 {
-  "$schema": "./packages.schema.json",
+  "$schema": "https://raw.githubusercontent.com/zPodFactory/zBoxTUI/main/src/zboxtui/data/packages.schema.json",
   "schema_version": 1,
   "updated_at": "2026-05-23T00:00:00Z",
   "groups": [

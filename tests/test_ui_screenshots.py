@@ -61,7 +61,7 @@ class TestDashboardScreen:
     async def test_dashboard_initial_view(self):
         """Test dashboard displays correctly on startup."""
         app = ZBoxTUI()
-        async with app.run_test(size=(100, 30)) as pilot:
+        async with app.run_test(size=(100, 30)):
             await asyncio.sleep(0.2)
             save_screenshot(app, "01_dashboard_initial")
 
@@ -415,7 +415,7 @@ class TestDirectDialogs:
     async def test_login_dialog_direct(self):
         """Test LoginDialog opened directly."""
         app = ZBoxTUI()
-        async with app.run_test(size=(100, 30)) as pilot:
+        async with app.run_test(size=(100, 30)):
             app.push_screen(LoginDialog(hostname="testserver"))
             await asyncio.sleep(0.2)
             save_screenshot(app, "27_login_dialog_direct")
@@ -424,7 +424,7 @@ class TestDirectDialogs:
     async def test_message_dialog_direct(self):
         """Test MessageDialog opened directly."""
         app = ZBoxTUI()
-        async with app.run_test(size=(100, 30)) as pilot:
+        async with app.run_test(size=(100, 30)):
             app.push_screen(MessageDialog(
                 "Custom Title",
                 "This is a custom message dialog.\n\n"
@@ -437,7 +437,7 @@ class TestDirectDialogs:
     async def test_network_dialog_direct(self):
         """Test NetworkTestDialog opened directly."""
         app = ZBoxTUI()
-        async with app.run_test(size=(100, 30)) as pilot:
+        async with app.run_test(size=(100, 30)):
             app.push_screen(NetworkTestDialog())
             await asyncio.sleep(0.3)
             save_screenshot(app, "29_network_dialog_direct")
@@ -446,7 +446,7 @@ class TestDirectDialogs:
     async def test_test_dialog_direct(self):
         """Test TestDialog opened directly."""
         app = ZBoxTUI()
-        async with app.run_test(size=(100, 30)) as pilot:
+        async with app.run_test(size=(100, 30)):
             app.push_screen(TestDialog())
             await asyncio.sleep(0.2)
             save_screenshot(app, "30_test_dialog_direct")
@@ -494,18 +494,18 @@ class TestEdgeCases:
         """Test app at different terminal sizes."""
         # Small terminal
         app = ZBoxTUI()
-        async with app.run_test(size=(80, 24)) as pilot:
+        async with app.run_test(size=(80, 24)):
             await asyncio.sleep(0.2)
             save_screenshot(app, "34_terminal_size_80x24")
 
         # Large terminal
         app = ZBoxTUI()
-        async with app.run_test(size=(120, 40)) as pilot:
+        async with app.run_test(size=(120, 40)):
             await asyncio.sleep(0.2)
             save_screenshot(app, "35_terminal_size_120x40")
 
         # Wide terminal
         app = ZBoxTUI()
-        async with app.run_test(size=(160, 30)) as pilot:
+        async with app.run_test(size=(160, 30)):
             await asyncio.sleep(0.2)
             save_screenshot(app, "36_terminal_size_160x30")

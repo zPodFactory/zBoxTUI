@@ -21,11 +21,12 @@ import asyncio
 import json
 import os
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum, auto
 from pathlib import Path
-from typing import Literal, Sequence
+from typing import Literal
 
 from rich.text import Text
 
@@ -308,24 +309,6 @@ def compute_package_changes(
     )
 
 
-def format_pending_changes_summary(changes: PackageChangeSet) -> tuple[str, bool]:
-    """Return ``(status_text, highlight)`` for the picker status bar."""
-    if not changes.has_changes:
-        return "No pending changes.", False
-    parts: list[str] = []
-    if changes.to_install:
-        parts.append(f"+{len(changes.to_install)} install")
-    if changes.to_upgrade:
-        parts.append(f"↑{len(changes.to_upgrade)} upgrade")
-    if changes.to_remove:
-        parts.append(f"-{len(changes.to_remove)} remove")
-    names = [*changes.to_install, *changes.to_upgrade, *changes.to_remove]
-    summary = " · ".join(parts)
-    if len(names) <= 4:
-        summary = f"{summary} ({', '.join(names)})"
-    return f"Pending: {summary} — Enter to apply", True
-
-
 def format_system_state(state: PackageState) -> str:
     """Human-readable install/version status for detail views."""
     if state.state == InstallState.UPGRADE_AVAILABLE:
@@ -461,27 +444,6 @@ def format_package_picker_line(
     if desc_width > 0:
         line.append(f"  {_truncate_display(pkg.description, desc_width)}")
     return line
-
-
-def format_package_row(
-    pkg: CuratedPackage,
-    state: PackageState,
-    target_checked: bool,
-    *,
-    name_width: int = 25,
-    version_width: int = 12,
-    upgrade_style: str = "bold green",
-) -> Text:
-    """Backward-compatible alias — name + version only (no description column)."""
-    return format_package_picker_line(
-        pkg,
-        state,
-        target_checked,
-        name_width=name_width,
-        version_width=version_width,
-        desc_width=0,
-        upgrade_style=upgrade_style,
-    )
 
 
 def format_catalog_freshness(updated_at: datetime | None, now: datetime) -> str:

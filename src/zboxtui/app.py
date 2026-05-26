@@ -7,13 +7,14 @@ from pathlib import Path
 
 from textual.app import App
 
+from .core.menu_items.privileged_flow import run_confirmed_reboot
 from .core.screens.dashboard import DashboardScreen
 from .core.screens.menu import MenuScreen
 from .core.themes import DEFAULT_THEME_NAME, all_themes
 from .core.utils.config import get_config
 from .core.utils.logging import get_logger
 from .core.utils.system import get_system_info
-from .core.widgets.dcui_dialog import LoginDialog, MessageDialog
+from .core.widgets.dcui_dialog import LoginDialog
 
 log = get_logger("app")
 
@@ -134,15 +135,10 @@ class ZBoxTUI(App):
             log.info("Root authenticated successfully")
             self.push_screen("menu")
 
-    def action_show_shutdown(self) -> None:
-        """Show the shutdown confirmation dialog."""
-        log.info("Showing shutdown dialog")
-        self.push_screen(
-            MessageDialog(
-                "Shut Down / Restart",
-                "This would shut down or restart the system.\n\nFeature not yet implemented.",
-            ),
-        )
+    def action_show_reboot(self) -> None:
+        """Reboot the system after operator confirmation (F12)."""
+        log.info("Showing reboot confirmation")
+        run_confirmed_reboot(self)
 
     def handle_menu_action(self, action: str) -> None:
         """Dispatch a menu action_id to its registered handler."""
@@ -155,6 +151,8 @@ class ZBoxTUI(App):
             return
 
         log.warning("No handler found for action: %s", action)
+        from .core.widgets.dcui_dialog import MessageDialog
+
         self.push_screen(
             MessageDialog(
                 "Not Implemented",
