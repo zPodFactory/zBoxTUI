@@ -94,6 +94,21 @@ class ZBoxTUI(App):
         self._menu_handlers = handlers
         log.debug("Registered %d menu handlers", len(handlers))
 
+    def reload_dashboard(self) -> None:
+        """Re-evaluate the dashboard against the current config.
+
+        Called after Configure Settings persists changes so
+        ``dashboard_display_live_information`` and
+        ``dashboard_refresh_interval_seconds`` take effect on the
+        running screen, not just on the next launch.
+        """
+        for screen in self.screen_stack:
+            if isinstance(screen, DashboardScreen):
+                log.info("Reloading dashboard from updated config")
+                screen.reload_from_config()
+                return
+        log.debug("reload_dashboard called but no DashboardScreen on the stack")
+
     def action_show_login(self) -> None:
         """Show the login dialog, or skip to the menu if already authenticated."""
         log.debug("action_show_login called (authenticated=%s)", self._authenticated)

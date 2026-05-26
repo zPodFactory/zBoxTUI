@@ -7,8 +7,10 @@ from typing import TYPE_CHECKING
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
+from textual.timer import Timer
 from textual.widgets import ProgressBar, Static
 
+from ..utils.config import get_config
 from ..utils.system import get_load_percent, get_memory_usage, get_system_info
 
 if TYPE_CHECKING:
@@ -65,6 +67,12 @@ class DashboardScreen(Screen):
         height: auto;
     }
 
+    /* When live information is off, the network column grows to fill
+     * the whole content area so it doesn't look like dead space. */
+    DashboardScreen #content-network.--solo {
+        width: 100%;
+    }
+
     /* Generic "label + bar + percent" row used in both the header
      * (CPU / memory) and the bottom storage panel. Defined once,
      * customised per location via the .stat-bar-* descendants. */
@@ -106,16 +114,18 @@ class DashboardScreen(Screen):
         background: $z-mantle;
     }
 
-    /* Two-column "System Load | Memory Usage" row at the bottom of
-     * the header, mirroring the Network / Storage split downstairs.
-     * Docked to the bottom of the header panel with a 1-line margin
-     * so the bars sit just above the border separator. */
-    DashboardScreen #header-stats-row {
+    /* Two-column rows in the header: left = info text (cpu model /
+     * memory total), right = matching usage bar. The two rows share
+     * the same 50/50 split so all four columns line up vertically. */
+    DashboardScreen .header-info-row {
         layout: horizontal;
         height: 1;
         width: 100%;
-        dock: bottom;
-        margin-bottom: 1;
+    }
+
+    DashboardScreen .header-info-text {
+        width: 1fr;
+        height: 1;
     }
 
     DashboardScreen .header-stat-cell {
@@ -124,11 +134,11 @@ class DashboardScreen(Screen):
         height: 1;
     }
 
-    /* Pin both cell labels to the longest of "System Load" /
-     * "Memory Usage" so the two bars start at the same column
-     * relative to their cell. */
+    /* "CPU Usage" and "MEM Usage" are both 9 chars; +1 for the
+     * trailing padding column = 10. Pinning the label width keeps
+     * the two bars locked to the same start column. */
     DashboardScreen .header-stat-cell-label {
-        width: 13;
+        width: 10;
         height: 1;
         padding-right: 1;
     }
@@ -147,6 +157,7 @@ class DashboardScreen(Screen):
     DashboardScreen .storage-row .stat-label {
         padding-left: 2;
     }
+
 
     DashboardScreen #dashboard-footer {
         layout: horizontal;
@@ -171,8 +182,20 @@ class DashboardScreen(Screen):
     }
     """
 
+    def __init__(
+        self,
+        *,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+    ) -> None:
+        super().__init__(name=name, id=id, classes=classes)
+        self._refresh_timer: Timer | None = None
+
     def compose(self) -> ComposeResult:
         info = get_system_info()
+        cfg = get_config()
+        show_live = cfg.dashboard_display_live_information
 
         # Header section with system info (gray with white border top/left/right)
         with Vertical(id="dashboard-header"):
@@ -180,28 +203,37 @@ class DashboardScreen(Screen):
             yield Static("")
             yield Static(info.hostname)
             yield Static("")
-            yield Static(f"{info.cpu_info} ({info.cpu_count} cores)")
-            yield Static(info.memory_total)
-            # Two columns: System Load (left) | Memory Usage (right)
-            # — mirrors the Network / Storage split in the bottom panel.
-            with Horizontal(id="header-stats-row"):
-                yield from self._header_stat_cell(
-                    "System Load",
-                    info.cpu_load_percent,
-                    bar_id="cpu-load-bar",
-                    percent_id="cpu-load-pct",
-                )
-                yield from self._header_stat_cell(
-                    "Memory Usage",
-                    info.memory_percent,
-                    bar_id="memory-bar",
-                    percent_id="memory-pct",
-                )
+            # When live info is on, hardware fact + live bar share a 50/50
+            # row. When off, just the hardware text (no bar to populate).
+            if show_live:
+                with Horizontal(classes="header-info-row"):
+                    yield Static(
+                        f"{info.cpu_info} ({info.cpu_count})",
+                        classes="header-info-text",
+                    )
+                    yield from self._header_stat_cell(
+                        "CPU Usage",
+                        info.cpu_load_percent,
+                        bar_id="cpu-load-bar",
+                        percent_id="cpu-load-pct",
+                    )
+                with Horizontal(classes="header-info-row"):
+                    yield Static(info.memory_total, classes="header-info-text")
+                    yield from self._header_stat_cell(
+                        "MEM Usage",
+                        info.memory_percent,
+                        bar_id="memory-bar",
+                        percent_id="memory-pct",
+                    )
+            else:
+                yield Static(f"{info.cpu_info} ({info.cpu_count})")
+                yield Static(info.memory_total)
 
         # Main content area (yellow with white border left/right/bottom)
         with Vertical(id="dashboard-content"):
             with Horizontal(id="content-inner"):
-                with Vertical(id="content-network"):
+                network_classes = "" if show_live else "--solo"
+                with Vertical(id="content-network", classes=network_classes):
                     yield Static("Network Interfaces:")
                     yield Static("")
                     max_name_len = (
@@ -217,21 +249,22 @@ class DashboardScreen(Screen):
                             ip_display = iface.ipv4
                         yield Static(f"  {name_padded} {ip_display}")
 
-                with Vertical(id="content-storage"):
-                    yield Static("Storage:")
-                    yield Static("")
-                    if not info.filesystems:
-                        yield Static("  (no disk-backed mounts found)")
-                    else:
-                        max_mp_len = max(
-                            len(fs.mount_point) for fs in info.filesystems
-                        )
-                        for fs in info.filesystems:
-                            yield from self._stat_row(
-                                fs.mount_point.ljust(max_mp_len),
-                                fs.percent,
-                                kind="storage",
+                if show_live:
+                    with Vertical(id="content-storage"):
+                        yield Static("Storage:")
+                        yield Static("")
+                        if not info.filesystems:
+                            yield Static("  (no disk-backed mounts found)")
+                        else:
+                            max_mp_len = max(
+                                len(fs.mount_point) for fs in info.filesystems
                             )
+                            for fs in info.filesystems:
+                                yield from self._stat_row(
+                                    fs.mount_point.ljust(max_mp_len),
+                                    fs.percent,
+                                    kind="storage",
+                                )
 
             # Footer keybinds at bottom of yellow section
             with Horizontal(id="dashboard-footer"):
@@ -332,10 +365,50 @@ class DashboardScreen(Screen):
     def on_mount(self) -> None:
         """Take debug screenshot on mount + start the live-stat refresh tick."""
         self.app.save_debug_screenshot("dashboard")
-        # 2 seconds is responsive enough for memory while staying calm
-        # for the 1-min load average (which by definition only moves
-        # over the minute anyway). Cheap: two /proc reads per tick.
-        self.set_interval(2.0, self._refresh_stats)
+        self._start_timers_from_config()
+
+    def _start_timers_from_config(self) -> None:
+        """Read config and (re)arm the live-stat refresh timer.
+
+        Split out from on_mount so :meth:`reload_from_config` can call
+        it after a re-compose without re-running anything else.
+        """
+        if get_config().dashboard_display_live_information:
+            self._start_refresh()
+
+    def reload_from_config(self) -> None:
+        """Rebuild the dashboard against the current config.
+
+        Called by the app after Configure Settings applies — the
+        live-info toggle and refresh interval must take effect
+        immediately, not on the next process restart. ``recompose``
+        is async, so dispatch via a worker.
+        """
+        self.run_worker(
+            self._reload_async(),
+            exclusive=True,
+            group="dashboard-reload",
+        )
+
+    async def _reload_async(self) -> None:
+        # Tear down running state.
+        self._stop_refresh()
+        # Re-run compose() so the right-column widgets appear/vanish
+        # based on the new display_live_information value.
+        await self.recompose()
+        self._start_timers_from_config()
+
+    def _start_refresh(self) -> None:
+        """(Re)start the periodic /proc sampler if it isn't already running."""
+        if self._refresh_timer is not None:
+            return
+        interval = get_config().dashboard_refresh_interval_seconds
+        self._refresh_timer = self.set_interval(interval, self._refresh_stats)
+
+    def _stop_refresh(self) -> None:
+        if self._refresh_timer is not None:
+            self._refresh_timer.stop()
+            self._refresh_timer = None
 
     def _refresh_stats(self) -> None:
         """Re-sample CPU load + memory and update the header bars."""

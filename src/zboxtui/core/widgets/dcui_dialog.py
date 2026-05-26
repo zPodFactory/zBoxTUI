@@ -700,43 +700,57 @@ class NetworkTestDialog(ModalScreen[None]):
         self.app.save_debug_screenshot("network_test_dialog")
         self._run_tests()
 
-    def _begin_test(self, status: Static) -> None:
-        """Mark a status row as the one currently being tested (spinning)."""
+    def _theme_dots(self, results: list[bool | None]) -> Text:
+        """Coloured dots prefixed with a space so they sit clear of the
+        spinner frame in :func:`Spinner` 's inline ``text``."""
+        from .probes import probe_dots as _probe_dots
+
+        theme = self.app.current_theme
+        return Text(" ") + _probe_dots(
+            results,
+            success=(theme.success if theme else None) or "green",
+            error=(theme.error if theme else None) or "red",
+            faint="grey50",
+        )
+
+    def _begin_test(self, status: Static, probe_count: int = 3) -> None:
+        """Show the spinner alongside ``probe_count`` faint dot slots."""
         status.remove_class("--success", "--failure")
         status.add_class("--pending")
-        status.update(Spinner("dots"))
+        status.update(Spinner("dots", text=self._theme_dots([None] * probe_count)))
         status.auto_refresh = _SPINNER_REFRESH
 
     def _finish_test(self, status: Static, success: bool, message: str) -> None:
-        """Mark a status row with its final result."""
+        """Replace the spinning row with the plain summary line."""
         status.auto_refresh = None
         status.remove_class("--pending")
         status.add_class("--success" if success else "--failure")
         status.update(message)
 
+    async def _run_target(self, host: str, status: Static) -> None:
+        """Run 3 paced ICMP probes against ``host``, updating ``status``."""
+        from .probes import run_probes, summarise
+
+        self._begin_test(status, probe_count=3)
+
+        def on_probe(results: list[bool | None], _latencies: list[float]) -> None:
+            status.update(Spinner("dots", text=self._theme_dots(results)))
+
+        results, latencies = await run_probes(host, count=3, on_progress=on_probe)
+        ok, message = summarise(results, latencies)
+        self._finish_test(status, ok, message)
+
     @work(exclusive=True)
     async def _run_tests(self) -> None:
         """Run all network connectivity tests, one row at a time."""
-        # Test gateway
         gateway_status = self.query_one("#gateway-status", Static)
-        self._begin_test(gateway_status)
         if self._gateway:
-            success, message = await ping_host(self._gateway)
-            self._finish_test(gateway_status, success, message)
+            await self._run_target(self._gateway, gateway_status)
         else:
             self._finish_test(gateway_status, False, "No gateway configured")
 
-        # Test Google DNS
-        google_status = self.query_one("#google-status", Static)
-        self._begin_test(google_status)
-        success, message = await ping_host("8.8.8.8")
-        self._finish_test(google_status, success, message)
-
-        # Test Cloudflare DNS
-        cloudflare_status = self.query_one("#cloudflare-status", Static)
-        self._begin_test(cloudflare_status)
-        success, message = await ping_host("1.1.1.1")
-        self._finish_test(cloudflare_status, success, message)
+        await self._run_target("8.8.8.8", self.query_one("#google-status", Static))
+        await self._run_target("1.1.1.1", self.query_one("#cloudflare-status", Static))
 
         instruction = self.query_one("#dialog-subtitle", Static)
         instruction.update("Network connectivity test complete.")

@@ -9,10 +9,11 @@ Resolution order for the config file path (highest priority first):
 4. ``/etc/zboxtui/app.conf`` — the system-wide config; the right home when
    the TUI is deployed on a box that everyone configures the same way.
 
-Writes (e.g. :func:`write_theme`) follow the same priority but additionally
-test for writability — if the system path was loaded but isn't writable
-(typical for a non-root user), the change is persisted to the user path
-instead so the user's choices survive a restart.
+Writes (e.g. :func:`write_theme`, :func:`write_settings`) follow the same
+priority but additionally test for writability — if the system path was
+loaded but isn't writable (typical for a non-root user), the change is
+persisted to the user path instead so the user's choices survive a
+restart.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ import contextlib
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from ..themes import DEFAULT_THEME_NAME
 
@@ -41,6 +43,50 @@ DEFAULT_LOG_LEVEL = "INFO"
 # https URL.
 DEFAULT_CATALOG_URL = ""
 
+DEFAULT_DASHBOARD_LIVE_INFO = True
+DEFAULT_DASHBOARD_REFRESH_INTERVAL_SECONDS = 2.0
+DEFAULT_NETWORK_TEST_TARGET = "1.1.1.1"
+DEFAULT_DNS_TEST_TARGET = "example.com"
+
+
+def _parse_bool(value: str | None, default: bool) -> bool:
+    """Lenient bool parser for INI values.
+
+    Accepts true/yes/on/1 and false/no/off/0 (case-insensitive). Falls
+    back to ``default`` for anything else so a typo in the config file
+    doesn't silently flip a setting.
+    """
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"true", "yes", "on", "1"}:
+        return True
+    if normalized in {"false", "no", "off", "0"}:
+        return False
+    return default
+
+
+def _parse_positive_int(value: str | None, default: int, *, minimum: int = 1) -> int:
+    if value is None:
+        return default
+    try:
+        result = int(value.strip())
+    except (TypeError, ValueError):
+        return default
+    return result if result >= minimum else default
+
+
+def _parse_positive_float(
+    value: str | None, default: float, *, minimum: float = 0.1
+) -> float:
+    if value is None:
+        return default
+    try:
+        result = float(value.strip())
+    except (TypeError, ValueError):
+        return default
+    return result if result >= minimum else default
+
 
 @dataclass
 class AppConfig:
@@ -50,6 +96,14 @@ class AppConfig:
     log_level: str = DEFAULT_LOG_LEVEL
     theme: str = DEFAULT_THEME_NAME
     catalog_url: str = DEFAULT_CATALOG_URL
+
+    # Dashboard
+    dashboard_display_live_information: bool = DEFAULT_DASHBOARD_LIVE_INFO
+    dashboard_refresh_interval_seconds: float = DEFAULT_DASHBOARD_REFRESH_INTERVAL_SECONDS
+
+    # Network plugin defaults
+    network_test_default_target: str = DEFAULT_NETWORK_TEST_TARGET
+    dns_test_default_target: str = DEFAULT_DNS_TEST_TARGET
 
     # Path of the config file actually loaded (empty if defaults are in use).
     # Logged at startup so users can confirm which file took effect.
@@ -151,6 +205,27 @@ def load_config(config_path: str | None = None) -> AppConfig:
         config.log_file = section.get("log_file", config.log_file)
         config.log_level = section.get("log_level", config.log_level).upper()
 
+    if "dashboard" in parser:
+        section = parser["dashboard"]
+        config.dashboard_display_live_information = _parse_bool(
+            section.get("display_live_information"),
+            config.dashboard_display_live_information,
+        )
+        config.dashboard_refresh_interval_seconds = _parse_positive_float(
+            section.get("refresh_interval_seconds"),
+            config.dashboard_refresh_interval_seconds,
+            minimum=0.5,
+        )
+
+    if "network" in parser:
+        section = parser["network"]
+        config.network_test_default_target = section.get(
+            "test_default_target", config.network_test_default_target
+        ).strip()
+        config.dns_test_default_target = section.get(
+            "dns_test_default_target", config.dns_test_default_target
+        ).strip()
+
     if "theme" in parser:
         config.theme = parser["theme"].get("name", config.theme)
 
@@ -164,6 +239,10 @@ def load_config(config_path: str | None = None) -> AppConfig:
         log_level=config.log_level,
         theme=config.theme,
         catalog_url=config.catalog_url,
+        dashboard_display_live_information=config.dashboard_display_live_information,
+        dashboard_refresh_interval_seconds=config.dashboard_refresh_interval_seconds,
+        network_test_default_target=config.network_test_default_target,
+        dns_test_default_target=config.dns_test_default_target,
         config_file_used=config.config_file_used,
     )
 
@@ -188,6 +267,24 @@ log_file = {DEFAULT_LOG_FILE}
 
 # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: {DEFAULT_LOG_LEVEL})
 log_level = {DEFAULT_LOG_LEVEL}
+
+[dashboard]
+# Show the right-hand columns on the dashboard: the CPU/MEM Usage bars
+# on the top panel and the Storage panel on the bottom-right. Disable
+# for a minimal, static dashboard (useful on kiosks / low-power tty).
+display_live_information = {str(DEFAULT_DASHBOARD_LIVE_INFO).lower()}
+
+# How often (in seconds) the dashboard re-samples /proc for CPU/MEM/etc.
+# Minimum 0.5; bumped to 5+ if you don't care about responsiveness and
+# want lower idle load.
+refresh_interval_seconds = {DEFAULT_DASHBOARD_REFRESH_INTERVAL_SECONDS}
+
+[network]
+# Default target prefilled into the Ping plugin's input box.
+test_default_target = {DEFAULT_NETWORK_TEST_TARGET}
+
+# Default hostname prefilled into the DNS Lookup plugin.
+dns_test_default_target = {DEFAULT_DNS_TEST_TARGET}
 
 [packages]
 # Where the Configure Packages "Refresh Curated List" action pulls
@@ -222,14 +319,69 @@ def get_config() -> AppConfig:
 
 
 def write_theme(theme_name: str, config_path: str | None = None) -> Path | None:
-    """Persist a new theme name to the best-available config file.
+    """Persist a new theme name to the best-available config file."""
+    return write_settings({"theme": {"name": theme_name}}, config_path=config_path)
 
-    Returns the path written to on success, or None if no writable target
-    could be found. Always updates the in-memory config so the running app
-    reflects the change either way.
+
+# Map of AppConfig attribute → (section, key, formatter). Used by
+# write_settings to apply in-memory mutations alongside the on-disk
+# write so the running app picks up the change immediately.
+_SETTING_TO_INI: dict[str, tuple[str, str]] = {
+    "log_file": ("general", "log_file"),
+    "log_level": ("general", "log_level"),
+    "dashboard_display_live_information": ("dashboard", "display_live_information"),
+    "dashboard_refresh_interval_seconds": ("dashboard", "refresh_interval_seconds"),
+    "network_test_default_target": ("network", "test_default_target"),
+    "dns_test_default_target": ("network", "dns_test_default_target"),
+    "theme": ("theme", "name"),
+    "catalog_url": ("packages", "catalog_url"),
+}
+
+
+def _format_ini_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def write_settings(
+    updates: dict[str, Any] | dict[str, dict[str, Any]],
+    *,
+    config_path: str | None = None,
+) -> Path | None:
+    """Persist one or more settings to the best-available config file.
+
+    Two input shapes are accepted:
+
+    * Flat ``{attr_name: value}`` keyed by AppConfig field name (eg.
+      ``{"dashboard_display_live_information": False}``). Each known
+      attribute is also updated in the in-memory ``AppConfig``.
+    * Nested ``{section: {key: value}}`` for setting raw INI entries
+      (used by :func:`write_theme`).
+
+    Returns the path written to on success, or None if no writable
+    target could be found.
     """
     cfg = get_config()
-    cfg.theme = theme_name
+    nested: dict[str, dict[str, Any]] = {}
+
+    # Detect input shape: nested if every value is a dict.
+    if updates and all(isinstance(v, dict) for v in updates.values()):
+        for section, kv in updates.items():
+            nested.setdefault(section, {}).update(kv)  # type: ignore[arg-type]
+    else:
+        for attr, value in updates.items():
+            mapping = _SETTING_TO_INI.get(attr)
+            if mapping is None:
+                continue
+            section, key = mapping
+            nested.setdefault(section, {})[key] = value
+            # Keep the in-memory config coherent with what we just wrote.
+            if hasattr(cfg, attr):
+                setattr(cfg, attr, value)
+
+    if not nested:
+        return None
 
     path = _resolve_write_path(config_path, cfg.config_file_used)
 
@@ -238,9 +390,11 @@ def write_theme(theme_name: str, config_path: str | None = None) -> Path | None:
         with contextlib.suppress(configparser.Error, OSError):
             parser.read(path)
 
-    if "theme" not in parser:
-        parser["theme"] = {}
-    parser["theme"]["name"] = theme_name
+    for section, kv in nested.items():
+        if section not in parser:
+            parser[section] = {}
+        for key, value in kv.items():
+            parser[section][key] = _format_ini_value(value)
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -32,6 +32,21 @@ def setup_screenshot_dir():
     yield
 
 
+@pytest.fixture(autouse=True)
+def stub_pam_auth(monkeypatch):
+    """All UI tests that go through the login dialog need PAM stubbed.
+
+    Real ``verify_root_password`` shells out to ``su -c true root`` —
+    that depends on the host actually having root password ``test``,
+    which neither CI nor any sane dev box does. Stub it module-wide so
+    the menu navigation tests aren't quietly screenshotting the login
+    dialog.
+    """
+    import zboxtui.core.widgets.dcui_dialog as dcui_dialog
+
+    monkeypatch.setattr(dcui_dialog, "verify_root_password", lambda _pw: True)
+
+
 def save_screenshot(app: ZBoxTUI, name: str) -> Path:
     """Save a screenshot to the tests/screenshots directory."""
     filepath = SCREENSHOT_DIR / f"{name}.svg"
@@ -115,7 +130,7 @@ class TestLoginDialog:
 
     @pytest.mark.asyncio
     async def test_login_dialog_submit(self):
-        """Test login dialog submission."""
+        """Test login dialog submission. PAM is stubbed module-wide."""
         app = ZBoxTUI()
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.press("f2")
@@ -124,7 +139,8 @@ class TestLoginDialog:
             await pilot.press("tab")
             await pilot.press("t", "e", "s", "t")
             await pilot.press("enter")
-            await asyncio.sleep(0.2)
+            # Give the worker + screen push time to settle.
+            await asyncio.sleep(0.5)
             save_screenshot(app, "07_login_success_menu")
 
             # Should now be on menu screen
@@ -141,7 +157,8 @@ class TestMenuScreen:
         await pilot.press("tab")
         await pilot.press("t", "e", "s", "t")
         await pilot.press("enter")
-        await asyncio.sleep(0.2)
+        # PAM stub returns instantly, but screen push happens after.
+        await asyncio.sleep(0.5)
 
     @pytest.mark.asyncio
     async def test_menu_initial_view(self):

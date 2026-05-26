@@ -6,10 +6,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from .hostname import show_hostname_dialog
 from .network import show_network_config_dialog, show_restart_network_dialog
 from .network_test import show_network_test_dialog
 from .packages import show_packages_dialog
 from .password import show_password_dialog
+from .settings import show_settings_dialog
 from .theme import show_theme_dialog
 
 if TYPE_CHECKING:
@@ -30,10 +32,16 @@ class CoreMenuItem:
 # accordingly.
 CORE_MENU_ITEMS: list[CoreMenuItem | None] = [
     CoreMenuItem(
+        label="Configure Hostname",
+        description="Set the system hostname and DNS domain, with live FQDN preview.",
+        handler=show_hostname_dialog,
+    ),
+    CoreMenuItem(
         label="Configure Password",
         description="Change the root password for this system.",
         handler=show_password_dialog,
     ),
+    None,
     CoreMenuItem(
         label="Configure Network",
         description="Configure network interfaces, IP addresses, DNS, and routing.",
@@ -60,15 +68,22 @@ CORE_MENU_ITEMS: list[CoreMenuItem | None] = [
         description="Switch between the available color themes (catppuccin, esxi).",
         handler=show_theme_dialog,
     ),
+    CoreMenuItem(
+        label="Configure Settings",
+        description="Edit application preferences: live dashboard, auto-dim, log file, defaults.",
+        handler=show_settings_dialog,
+    ),
 ]
 
 __all__ = [
     "CORE_MENU_ITEMS",
     "CoreMenuItem",
+    "show_hostname_dialog",
     "show_network_config_dialog",
     "show_network_test_dialog",
     "show_packages_dialog",
     "show_password_dialog",
     "show_restart_network_dialog",
+    "show_settings_dialog",
     "show_theme_dialog",
 ]

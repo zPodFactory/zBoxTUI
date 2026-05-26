@@ -19,6 +19,7 @@ from .dcui_dialog import (
 from .dcui_footer import DCUIFooter
 from .dcui_header import DCUIHeader
 from .dcui_menu import DCUIMenu, MenuEntry, MenuGroupHeader, MenuItem
+from .probes import ping_probe, probe_dots, run_probes, summarise
 
 __all__ = [
     # Charts
@@ -27,6 +28,10 @@ __all__ = [
     "DCUI_DIALOG_CSS",
     # Utility functions
     "ping_host",
+    "ping_probe",
+    "probe_dots",
+    "run_probes",
+    "summarise",
     "verify_root_password",
     # Reusable widgets
     "DCUIHeader",

@@ -1,0 +1,41 @@
+# zBoxTUI Configuration File
+#
+# This is the production default that ships under /etc/zboxtui/app.conf.
+# Resolution order (first hit wins):
+#   1. --config <path> on the CLI
+#   2. $ZBOXTUI_CONFIG
+#   3. ~/.config/zboxtui/app.conf
+#   4. /etc/zboxtui/app.conf  <-- this file
+
+[general]
+# Production deployments log to a real path under /var/log so the
+# DCUI's traces survive a service restart and can be rotated.
+log_file = /var/log/zboxtui.log
+log_level = INFO
+
+[dashboard]
+# Right-hand columns on the dashboard: CPU/MEM Usage bars in the
+# header + Storage panel at the bottom. Set false for a static
+# dashboard (lower CPU on idle terminals, no live refresh).
+display_live_information = true
+
+# How often (seconds) the dashboard re-samples /proc. Minimum 0.5.
+# Bump to 5+ on energy-constrained deployments.
+refresh_interval_seconds = 2.0
+
+[network]
+# Default ping target — prefilled into the Ping plugin's input.
+test_default_target = 1.1.1.1
+
+# Default DNS lookup hostname — prefilled into the DNS Lookup plugin.
+dns_test_default_target = example.com
+
+[packages]
+# Source of the "Refresh Curated List" action in Configure Packages.
+# Leave blank to fall back to the catalog bundled with zboxtui.
+# catalog_url = https://raw.githubusercontent.com/zPodFactory/zbox-packages/main/packages.json
+
+[theme]
+# Built-in themes: catppuccin-mocha (default), vmware-esxi, nord,
+# gruvbox, tokyo-night, atom-one-dark
+name = catppuccin-mocha

@@ -1,5 +1,6 @@
 """System information utilities."""
 
+import math
 import os
 import platform
 import re
@@ -122,18 +123,68 @@ def get_cpu_info() -> str:
     return platform.processor() or "Unknown CPU"
 
 
+def _provisioned_memory_bytes() -> int | None:
+    """Return the raw RAM the hypervisor/BIOS reports to the kernel.
+
+    /proc/meminfo's MemTotal excludes 0.5-3% reserved by the kernel
+    and firmware, so a 48 GiB VM reports ~47.05 GiB there — fine for
+    "what's usable" but misleading for "what's provisioned".
+
+    /sys/devices/system/memory/ exposes the kernel's memory-block
+    map, which is readable without root (unlike /proc/iomem) and
+    counts the *full* provisioned RAM. Returns None on kernels that
+    don't expose memory blocks (typical for some ARM builds).
+    """
+    root = "/sys/devices/system/memory"
+    try:
+        with open(f"{root}/block_size_bytes") as f:
+            block_size = int(f.read().strip(), 16)
+        block_count = sum(
+            1
+            for name in os.listdir(root)
+            if name.startswith("memory") and name[6:].isdigit()
+        )
+    except (FileNotFoundError, PermissionError, ValueError):
+        return None
+    if block_size <= 0 or block_count <= 0:
+        return None
+    return block_size * block_count
+
+
 def get_memory_info() -> str:
-    """Get total memory in human-readable format."""
+    """Total memory, formatted for the dashboard header.
+
+    Prefer the sysfs memory-block total (matches the nominal VM/host
+    allocation). Fall back to /proc/meminfo's MemTotal — rounded up
+    to the nearest whole GiB when the gap looks like normal kernel
+    reserve overhead — if sysfs isn't available.
+    """
+    provisioned = _provisioned_memory_bytes()
+    if provisioned is not None:
+        gb = provisioned / (1024**3)
+        # Real provisioned RAM is essentially always an integer GiB.
+        # Format without decimals when it is; keep one decimal as a
+        # safety net for unusual configs (e.g. partially offlined).
+        if abs(gb - round(gb)) < 0.01:
+            return f"{round(gb)} GiB Memory"
+        return f"{gb:.1f} GiB Memory"
+
     try:
         with open("/proc/meminfo") as f:
             for line in f:
                 if line.startswith("MemTotal"):
                     kb = int(line.split()[1])
-                    gb = kb / (1024 * 1024)
-                    return f"{gb:.1f} GiB Memory"
+                    break
+            else:
+                return "Unknown Memory"
     except (FileNotFoundError, PermissionError, ValueError):
-        pass
-    return "Unknown Memory"
+        return "Unknown Memory"
+
+    gb_exact = kb / (1024 * 1024)
+    gb_ceil = math.ceil(gb_exact)
+    if gb_ceil > 0 and (gb_ceil - gb_exact) / gb_ceil <= 0.05:
+        return f"{gb_ceil} GiB Memory"
+    return f"{gb_exact:.1f} GiB Memory"
 
 
 def cidr_to_netmask(cidr: int) -> str:
@@ -352,26 +403,20 @@ def get_filesystems() -> list[FilesystemInfo]:
     return result
 
 
-# Prefixes to exclude when listing physical interfaces
-EXCLUDED_INTERFACE_PREFIXES = (
-    "lo",
-    "docker",
-    "br-",
-    "veth",
-    "tailscale",
-    "wg",
-    "virbr",
-    "vnet",
+# Prefixes for physical NICs shown in network configuration UI
+INCLUDED_INTERFACE_PREFIXES = (
+    "eth",
+    "ens",
 )
 
 
 def get_physical_interfaces() -> list[NetworkInterface]:
-    """Get only physical network interfaces, excluding virtual/VPN interfaces."""
+    """Get physical network interfaces (eth* and ens* only)."""
     all_interfaces = get_network_interfaces()
     return [
         iface
         for iface in all_interfaces
-        if not iface.name.startswith(EXCLUDED_INTERFACE_PREFIXES)
+        if iface.name.startswith(INCLUDED_INTERFACE_PREFIXES)
     ]
 
 
