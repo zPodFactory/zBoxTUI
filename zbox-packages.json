@@ -1,0 +1,112 @@
+{
+  "$schema": "https://raw.githubusercontent.com/zPodFactory/zBoxTUI/main/src/zboxtui/data/packages.schema.json",
+  "schema_version": 1,
+  "updated_at": "2026-05-23T00:00:00Z",
+  "groups": [
+    {
+      "name": "System Monitoring",
+      "description": "Live resource monitoring.",
+      "packages": [
+        {
+          "type": "apt",
+          "name": "btop",
+          "description": "Resource monitor — htop's prettier descendant"
+        }
+      ]
+    },
+    {
+      "name": "Containers & Orchestration",
+      "description": "Packages from the Docker and Kubernetes APT repositories.",
+      "packages": [
+        {
+          "type": "apt",
+          "name": "docker-ce",
+          "description": "Docker Engine — daemon, CLI, and containerd"
+        },
+        {
+          "type": "apt",
+          "name": "docker-compose-plugin",
+          "description": "Docker Compose v2 plugin (use as `docker compose`)"
+        },
+        {
+          "type": "apt",
+          "name": "docker-buildx-plugin",
+          "description": "Buildx — multi-platform image builds"
+        },
+        {
+          "type": "apt",
+          "name": "kubectl",
+          "description": "Kubernetes command-line client"
+        }
+      ]
+    },
+    {
+      "name": "Infrastructure as Code",
+      "description": "Packages from the HashiCorp APT repository.",
+      "packages": [
+        {
+          "type": "apt",
+          "name": "boundary",
+          "description": "Identity-based secure access to dynamic infrastructure"
+        },
+        {
+          "type": "apt",
+          "name": "consul",
+          "description": "Service mesh, discovery, and configuration"
+        },
+        {
+          "type": "apt",
+          "name": "nomad",
+          "description": "Workload orchestrator for containers and VMs"
+        },
+        {
+          "type": "apt",
+          "name": "packer",
+          "description": "Build identical machine images for multiple platforms"
+        },
+        {
+          "type": "apt",
+          "name": "terraform",
+          "description": "Declarative infrastructure provisioning"
+        },
+        {
+          "type": "apt",
+          "name": "vault",
+          "description": "Secrets management and identity-based access"
+        }
+      ]
+    },
+    {
+      "name": "Microsoft",
+      "description": "Packages from the Microsoft packages.microsoft.com APT repository.",
+      "packages": [
+        {
+          "type": "apt",
+          "name": "powershell",
+          "description": "PowerShell 7 — cross-platform shell and scripting"
+        }
+      ]
+    },
+    {
+      "name": "Networking & VPN",
+      "description": "Packages from the Tailscale, NetBird, and Cloudflare APT repositories.",
+      "packages": [
+        {
+          "type": "apt",
+          "name": "tailscale",
+          "description": "Zero-config mesh VPN built on WireGuard"
+        },
+        {
+          "type": "apt",
+          "name": "netbird",
+          "description": "Open-source alternative mesh VPN (WireGuard-based)"
+        },
+        {
+          "type": "apt",
+          "name": "cloudflared",
+          "description": "Cloudflare Tunnel client (expose local services to the internet)"
+        }
+      ]
+    }
+  ]
+}

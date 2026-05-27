@@ -1,0 +1,17 @@
+# /etc/logrotate.d/zboxtui
+#
+# Rotates /var/log/zboxtui.log weekly, keeping 4 archives. zBoxTUI
+# truncates its log file at startup, so a SIGHUP isn't needed — but
+# `copytruncate` is the safest option since the TUI may be holding
+# the file open continuously while zBoxTUI runs.
+
+/var/log/zboxtui.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 root adm
+}
