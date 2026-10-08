@@ -1,6 +1,6 @@
 [project]
 name = "zboxtui"
-version = "0.2.6"
+version = "0.2.7"
 description = "Console DCUI-style TUI for Debian (ESXi / XCP-ng xsconsole-inspired; not vendor-affiliated)"
 readme = "README.md"
 license = "MIT"

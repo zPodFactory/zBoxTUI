@@ -20,6 +20,8 @@ with `python3 tools/release_notes.py X.Y.Z`.
 
 ## [Unreleased]
 
+## [0.2.7] — 2026-10-08
+
 ### Changed
 
 - **Network interfaces are listed in natural order.** VLAN IDs and interface indexes compare as
