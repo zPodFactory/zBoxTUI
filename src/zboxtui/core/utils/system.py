@@ -279,6 +279,23 @@ def get_default_gateway() -> tuple[str | None, str | None]:
     return None, None
 
 
+_NATURAL_SORT_RE = re.compile(r"(\d+)")
+
+
+def interface_sort_key(name: str) -> tuple:
+    """Natural sort key for interface names.
+
+    Splits the name into text and integer runs so that numeric parts,
+    such as VLAN IDs or interface indexes, compare numerically instead of
+    lexically: ``eth1.64 < eth1.128`` and ``eth2 < eth10``.
+    """
+    return tuple(
+        (0, int(part)) if part.isdigit() else (1, part)
+        for part in _NATURAL_SORT_RE.split(name)
+        if part
+    )
+
+
 def get_network_interfaces() -> list[NetworkInterface]:
     """Get list of network interfaces with their IPv4 addresses.
 
@@ -341,8 +358,9 @@ def get_network_interfaces() -> list[NetworkInterface]:
         except OSError:
             interfaces.append(NetworkInterface(name="lo", ipv4="127.0.0.1"))
 
-    # Sort to put gateway interface first
-    interfaces.sort(key=lambda x: (x.gateway is None, x.name))
+    # Sort to put gateway interface first, then natural order by name so
+    # VLAN IDs sort numerically (eth1.64 before eth1.128).
+    interfaces.sort(key=lambda x: (x.gateway is None, interface_sort_key(x.name)))
 
     return interfaces
 
@@ -445,7 +463,11 @@ def get_filesystems() -> list[FilesystemInfo]:
         except OSError:
             continue
         total = stat.f_blocks * stat.f_frsize
-        free = stat.f_bavail * stat.f_frsize
+        # Use f_bfree (all free blocks), not f_bavail (free blocks minus
+        # the ext4 root reservation, typically 5%). Deriving "used" from
+        # f_bavail silently counts the reserved blocks as used and
+        # overstates usage versus df/duf/shutil.disk_usage.
+        free = stat.f_bfree * stat.f_frsize
         used = max(0, total - free)
         if total == 0:
             continue
