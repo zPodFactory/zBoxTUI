@@ -7,6 +7,14 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 zboxtui.log
+.env
+dist/
 tmp/
 .claude/
 .cursor/
+
+# Local list of strings that must never enter the history (tools/release.py --check)
+.release-denylist
+
+# Run transcripts and captures, never committed
+runs/

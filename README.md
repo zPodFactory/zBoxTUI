@@ -273,10 +273,24 @@ Revert: `sudo /sbin/zbox-zboxtui-setup.sh --disable`
 uv sync
 uv run ruff check src/ tests/
 uv run mypy src/
-uv run pytest                    # 224 tests
+uv run pytest                    # 229 tests
 
 uv run python scripts/capture_readme_screenshots.py   # docs/screenshots/01–17
 ```
+
+## Releases
+
+What changed in each version: [GitHub releases](https://github.com/zPodFactory/zBoxTUI/releases)
+or [CHANGELOG.md](CHANGELOG.md). Every change gets a line under `[Unreleased]` there, and a
+release is one command:
+
+```bash
+python3 tools/release.py 0.3.0 --push      # --dry-run first to see the plan
+```
+
+It moves the heading, bumps `pyproject.toml` and `uv.lock`, runs the tests, commits, tags
+`v0.3.0` and pushes; the tag then runs `.github/workflows/release.yml`, which publishes the
+changelog section as the GitHub release note. See [tools/README.md](tools/README.md).
 
 ## Trademark notice
 
