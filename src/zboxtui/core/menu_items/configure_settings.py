@@ -50,6 +50,11 @@ _TEXT_FIELDS: tuple[tuple[str, str, str], ...] = (
         "Refresh (sec)",
         "How often the dashboard re-samples /proc.",
     ),
+    (
+        "dashboard_rescan_interval_seconds",
+        "Rescan (sec)",
+        "How often it re-reads interfaces, routes and mounts.",
+    ),
 )
 
 
@@ -57,6 +62,8 @@ def _coerce(field: str, value: str) -> object:
     """Convert raw text input to the type the AppConfig field expects."""
     if field == "dashboard_refresh_interval_seconds":
         return max(0.5, float(value.strip()))
+    if field == "dashboard_rescan_interval_seconds":
+        return max(1.0, float(value.strip()))
     return value.strip()
 
 

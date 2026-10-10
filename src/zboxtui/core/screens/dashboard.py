@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from textual import events, on
@@ -14,6 +15,9 @@ from textual.widgets import ProgressBar, Static
 from ..utils.config import get_config
 from ..utils import system
 from ..utils.system import (
+    FilesystemInfo,
+    NetworkInterface,
+    SystemInfo,
     get_load_percent,
     get_memory_stats,
     get_system_info,
@@ -21,6 +25,24 @@ from ..utils.system import (
 
 if TYPE_CHECKING:
     from ...app import ZBoxTUI
+
+
+@dataclass(frozen=True)
+class DashboardTopology:
+    """The slow-changing facts the dashboard shows, as last read from the OS.
+
+    Compared on every rescan tick so the screen repaints only what moved: text in
+    place for the hostname and the network block, bar values in place for storage,
+    and a full rebuild only when a mount appears or vanishes (its row is a widget).
+    """
+
+    hostname: str
+    network_text: str
+    filesystems: tuple[FilesystemInfo, ...]
+
+    @property
+    def mounts(self) -> tuple[tuple[str, str], ...]:
+        return tuple((fs.mount_point, fs.device) for fs in self.filesystems)
 
 
 class DashboardScreen(Screen):
@@ -196,11 +218,14 @@ class DashboardScreen(Screen):
     ) -> None:
         super().__init__(name=name, id=id, classes=classes)
         self._refresh_timer: Timer | None = None
+        self._rescan_timer: Timer | None = None
+        self._topology: DashboardTopology | None = None
 
     def compose(self) -> ComposeResult:
         info = get_system_info()
         cfg = get_config()
         show_live = cfg.dashboard_display_live_information
+        self._topology = self._topology_from(info)
 
         # Header panel ($z-panel) with top/left/right borders
         with Vertical(id="dashboard-header"):
@@ -239,25 +264,8 @@ class DashboardScreen(Screen):
             with Horizontal(id="content-inner"):
                 network_classes = "" if show_live else "--solo"
                 with Vertical(id="content-network", classes=network_classes):
-                    visible_interfaces = [
-                        iface for iface in info.interfaces if not self._is_virtual_iface(iface.name)
-                    ]
-                    default_gw_ip, default_gw_iface = system.get_default_gateway()
-                    network_lines = ["Network", ""]
-                    network_lines.extend(
-                        system.format_dashboard_network_iface_lines(visible_interfaces)
-                    )
-                    network_lines.append("")
-                    visible_names = frozenset(iface.name for iface in visible_interfaces)
-                    network_lines.extend(
-                        system.format_dashboard_network_routing_lines(
-                            default_gw_ip,
-                            default_gw_iface,
-                            visible_iface_names=visible_names,
-                        )
-                    )
                     yield Static(
-                        "\n".join(network_lines),
+                        self._topology.network_text,
                         id="network-block",
                         markup=False,
                     )
@@ -272,11 +280,13 @@ class DashboardScreen(Screen):
                             max_mp_len = max(
                                 len(fs.mount_point) for fs in info.filesystems
                             )
-                            for fs in info.filesystems:
+                            for index, fs in enumerate(info.filesystems):
                                 yield from self._stat_row(
                                     fs.mount_point.ljust(max_mp_len),
                                     fs.percent,
                                     kind="storage",
+                                    bar_id=f"storage-bar-{index}",
+                                    percent_id=f"storage-pct-{index}",
                                 )
 
             # Footer keybinds at bottom of the content panel
@@ -349,6 +359,43 @@ class DashboardScreen(Screen):
                 id=percent_id,
             )
 
+    @classmethod
+    def _network_block_text(cls, interfaces: list[NetworkInterface]) -> str:
+        """The network panel: interface rows, then routes and DNS."""
+        visible_interfaces = [
+            iface for iface in interfaces if not cls._is_virtual_iface(iface.name)
+        ]
+        default_gw_ip, default_gw_iface = system.get_default_gateway()
+        lines = ["Network", ""]
+        lines.extend(system.format_dashboard_network_iface_lines(visible_interfaces))
+        lines.append("")
+        visible_names = frozenset(iface.name for iface in visible_interfaces)
+        lines.extend(
+            system.format_dashboard_network_routing_lines(
+                default_gw_ip,
+                default_gw_iface,
+                visible_iface_names=visible_names,
+            )
+        )
+        return "\n".join(lines)
+
+    @classmethod
+    def _topology_from(cls, info: SystemInfo) -> DashboardTopology:
+        return DashboardTopology(
+            hostname=info.hostname,
+            network_text=cls._network_block_text(info.interfaces),
+            filesystems=tuple(info.filesystems),
+        )
+
+    @classmethod
+    def _read_topology(cls) -> DashboardTopology:
+        """Read the slow-changing facts from the OS (runs off the event loop)."""
+        return DashboardTopology(
+            hostname=system.get_hostname(),
+            network_text=cls._network_block_text(system.get_network_interfaces()),
+            filesystems=tuple(system.get_filesystems()),
+        )
+
     @staticmethod
     def _is_virtual_iface(name: str) -> bool:
         """Filter docker / libvirt / container-veth interfaces from
@@ -404,13 +451,14 @@ class DashboardScreen(Screen):
         self.reload_from_config()
 
     def _start_timers_from_config(self) -> None:
-        """Read config and (re)arm the live-stat refresh timer.
+        """Read config and (re)arm the live-stat refresh and rescan timers.
 
         Split out from on_mount so :meth:`reload_from_config` can call
         it after a re-compose without re-running anything else.
         """
         if get_config().dashboard_display_live_information:
             self._start_refresh()
+            self._start_rescan()
 
     def reload_from_config(self) -> None:
         """Rebuild the dashboard from current config and live OS state.
@@ -427,6 +475,7 @@ class DashboardScreen(Screen):
 
     async def _reload_async(self) -> None:
         self._stop_refresh()
+        self._stop_rescan()
         # Re-run compose() so the right-column widgets appear/vanish
         # based on the new display_live_information value.
         await self.recompose()
@@ -443,6 +492,52 @@ class DashboardScreen(Screen):
         if self._refresh_timer is not None:
             self._refresh_timer.stop()
             self._refresh_timer = None
+
+    def _start_rescan(self) -> None:
+        """(Re)start the slower timer that re-reads interfaces, routes and mounts."""
+        if self._rescan_timer is not None:
+            return
+        interval = get_config().dashboard_rescan_interval_seconds
+        self._rescan_timer = self.set_interval(interval, self._rescan)
+
+    def _stop_rescan(self) -> None:
+        if self._rescan_timer is not None:
+            self._rescan_timer.stop()
+            self._rescan_timer = None
+
+    def _rescan(self) -> None:
+        """Timer tick: read the OS in a thread (``ip`` is a subprocess), then apply."""
+        self.run_worker(
+            self._rescan_worker,
+            thread=True,
+            exclusive=True,
+            group="dashboard-rescan",
+            exit_on_error=False,
+        )
+
+    def _rescan_worker(self) -> None:
+        topology = self._read_topology()
+        self.app.call_from_thread(self._apply_topology, topology)
+
+    def _apply_topology(self, topology: DashboardTopology) -> None:
+        """Repaint what changed since the last read; rebuild only for new or gone mounts."""
+        current = self._topology
+        if current is None or topology == current:
+            return
+        if topology.mounts != current.mounts:
+            # Storage rows are widgets: a mount appearing or vanishing needs a rebuild,
+            # which also re-reads everything else.
+            self.reload_from_config()
+            return
+        if topology.hostname != current.hostname:
+            self.query_one("#dashboard-hostname", Static).update(topology.hostname)
+        if topology.network_text != current.network_text:
+            self.query_one("#network-block", Static).update(topology.network_text)
+        for index, fs in enumerate(topology.filesystems):
+            clamped = max(0.0, min(100.0, fs.percent))
+            self.query_one(f"#storage-bar-{index}", ProgressBar).update(progress=clamped)
+            self.query_one(f"#storage-pct-{index}", Static).update(f"{fs.percent:.0f}%")
+        self._topology = topology
 
     def _refresh_stats(self) -> None:
         """Re-sample CPU load + memory and update the header bars."""

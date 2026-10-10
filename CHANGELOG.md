@@ -20,6 +20,24 @@ with `python3 tools/release_notes.py X.Y.Z`.
 
 ## [Unreleased]
 
+### Added
+
+- **The dashboard follows the system.** Besides the CPU and memory bars, it now re-reads the
+  hostname, interfaces and addresses, routes, DNS and mounted filesystems on a timer (every
+  10 seconds by default, `rescan_interval_seconds` under `[dashboard]`, also in Configure
+  Settings). Only what changed is repainted: a new address or route updates the network block
+  in place, storage bars move in place, and a mount appearing or vanishing rebuilds the panel.
+  Before, Network and Storage were read once at start and again only when returning from the
+  F2 menu, so a VLAN interface or a volume added after boot stayed invisible.
+
+### Fixed
+
+- **Interfaces configured under `/etc/network/interfaces.d/` are no longer tagged
+  `[UNMANAGED]`.** The mode, DHCP and DNS readers opened only `/etc/network/interfaces` and
+  ignored its `source` line, so a static VLAN interface whose stanza zbox-init drops into
+  `interfaces.d` showed as unmanaged. The readers now follow `source` and `source-directory`
+  the way ifupdown does, relative paths included.
+
 ## [0.2.7] — 2026-10-08
 
 ### Changed

@@ -1,6 +1,7 @@
 """System information utilities."""
 
 import math
+import glob
 import os
 import platform
 import re
@@ -537,12 +538,59 @@ def get_dnsmasq_dns_servers(
     return parse_nameserver_file(resolv_path)[:2]
 
 
+_IFACE_SOURCE_RE = re.compile(r"^[ \t]*source(-directory)?[ \t]+(\S+)", re.M)
+_IFACE_SOURCE_DIR_NAME_RE = re.compile(r"[a-zA-Z0-9_-]+")
+
+
+def read_interfaces_config(interfaces_path: str = "/etc/network/interfaces") -> str:
+    """``interfaces_path`` plus every file its ``source`` and ``source-directory`` lines
+    pull in, concatenated in the order ifupdown reads them.
+
+    Debian's stock file starts with ``source /etc/network/interfaces.d/*``, and zbox-init
+    drops per-interface stanzas there, so a reader that opens only the main file calls a
+    configured VLAN interface unmanaged. Relative patterns resolve against the directory of
+    the file that names them, as in interfaces(5); ``source-directory`` takes only names
+    made of letters, digits, ``_`` and ``-``. Missing or unreadable files are skipped.
+    """
+    seen: set[str] = set()
+    parts: list[str] = []
+
+    def _read(path: str) -> None:
+        if path in seen:
+            return
+        seen.add(path)
+        try:
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+        except OSError:
+            return
+        parts.append(content)
+        base = os.path.dirname(path) or "."
+        for match in _IFACE_SOURCE_RE.finditer(content):
+            is_directory, target = match.group(1), match.group(2)
+            if not os.path.isabs(target):
+                target = os.path.join(base, target)
+            if is_directory:
+                try:
+                    names = sorted(os.listdir(target))
+                except OSError:
+                    continue
+                for name in names:
+                    if _IFACE_SOURCE_DIR_NAME_RE.fullmatch(name):
+                        _read(os.path.join(target, name))
+            else:
+                for found in sorted(glob.glob(target)):
+                    if os.path.isfile(found):
+                        _read(found)
+
+    _read(interfaces_path)
+    return "\n".join(parts)
+
+
 def get_interface_dns_servers(iface_name: str, *, interfaces_path: str = "/etc/network/interfaces") -> list[str]:
     """Parse ``dns-nameservers`` for ``iface_name`` from Debian interfaces file."""
-    try:
-        with open(interfaces_path, encoding="utf-8") as f:
-            content = f.read()
-    except (FileNotFoundError, PermissionError):
+    content = read_interfaces_config(interfaces_path)
+    if not content:
         return []
 
     stanza = re.search(
@@ -592,18 +640,13 @@ def get_interface_config_mode(
     interfaces_path: str = "/etc/network/interfaces",
 ) -> str:
     """``[STATIC]``, ``[DHCP]``, or ``[UNMANAGED]`` for dashboard tags."""
-    try:
-        with open(interfaces_path, encoding="utf-8") as f:
-            content = f.read()
-        match = re.search(
-            rf"iface\s+{re.escape(iface_name)}\s+inet\s+(\w+)",
-            content,
-        )
-        if not match:
-            return "[UNMANAGED]"
-        return "[DHCP]" if match.group(1).lower() == "dhcp" else "[STATIC]"
-    except (FileNotFoundError, PermissionError):
+    match = re.search(
+        rf"iface\s+{re.escape(iface_name)}\s+inet\s+(\w+)",
+        read_interfaces_config(interfaces_path),
+    )
+    if not match:
         return "[UNMANAGED]"
+    return "[DHCP]" if match.group(1).lower() == "dhcp" else "[STATIC]"
 
 
 def format_dashboard_network_iface_lines(
@@ -745,8 +788,13 @@ def format_dashboard_dns_servers(iface_name: str | None) -> str:
     return ", ".join(servers) if servers else "-"
 
 
-def is_dhcp_interface(iface_name: str) -> bool:
-    """Check if an interface is configured for DHCP in /etc/network/interfaces.
+def is_dhcp_interface(
+    iface_name: str,
+    *,
+    interfaces_path: str = "/etc/network/interfaces",
+) -> bool:
+    """Check if an interface is configured for DHCP in /etc/network/interfaces
+    (``source``d files included).
 
     Args:
         iface_name: The interface name to check (e.g., 'eth0').
@@ -754,17 +802,10 @@ def is_dhcp_interface(iface_name: str) -> bool:
     Returns:
         True if configured for DHCP, False if static or unknown.
     """
-    try:
-        with open("/etc/network/interfaces") as f:
-            content = f.read()
-            # Look for "iface eth0 inet dhcp" pattern
-            pattern = rf"iface\s+{re.escape(iface_name)}\s+inet\s+(\w+)"
-            match = re.search(pattern, content)
-            if match:
-                return match.group(1).lower() == "dhcp"
-    except (FileNotFoundError, PermissionError):
-        pass
-    return False
+    # Look for "iface eth0 inet dhcp" pattern
+    pattern = rf"iface\s+{re.escape(iface_name)}\s+inet\s+(\w+)"
+    match = re.search(pattern, read_interfaces_config(interfaces_path))
+    return bool(match) and match.group(1).lower() == "dhcp"
 
 
 @dataclass

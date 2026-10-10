@@ -23,6 +23,11 @@ display_live_information = true
 # Bump to 5+ on energy-constrained deployments.
 refresh_interval_seconds = 2.0
 
+# How often (seconds) the dashboard re-reads the slower-changing facts:
+# hostname, interfaces and addresses, routes, mounted filesystems. The
+# screen only repaints what changed. Minimum 1.
+rescan_interval_seconds = 10.0
+
 [network]
 # Default ping target — prefilled into the Ping plugin's input.
 test_default_target = 1.1.1.1

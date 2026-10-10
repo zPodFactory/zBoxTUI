@@ -182,6 +182,7 @@ log_level = INFO
 [dashboard]
 display_live_information = true
 refresh_interval_seconds = 2.0
+rescan_interval_seconds = 10.0
 
 [network]
 test_default_target = 1.1.1.1

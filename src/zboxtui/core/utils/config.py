@@ -43,6 +43,7 @@ DEFAULT_CATALOG_URL = (
 
 DEFAULT_DASHBOARD_LIVE_INFO = True
 DEFAULT_DASHBOARD_REFRESH_INTERVAL_SECONDS = 2.0
+DEFAULT_DASHBOARD_RESCAN_INTERVAL_SECONDS = 10.0
 DEFAULT_NETWORK_TEST_TARGET = "1.1.1.1"
 DEFAULT_DNS_TEST_TARGET = "example.com"
 
@@ -98,6 +99,7 @@ class AppConfig:
     # Dashboard
     dashboard_display_live_information: bool = DEFAULT_DASHBOARD_LIVE_INFO
     dashboard_refresh_interval_seconds: float = DEFAULT_DASHBOARD_REFRESH_INTERVAL_SECONDS
+    dashboard_rescan_interval_seconds: float = DEFAULT_DASHBOARD_RESCAN_INTERVAL_SECONDS
 
     # Network plugin defaults
     network_test_default_target: str = DEFAULT_NETWORK_TEST_TARGET
@@ -214,6 +216,11 @@ def load_config(config_path: str | None = None) -> AppConfig:
             config.dashboard_refresh_interval_seconds,
             minimum=0.5,
         )
+        config.dashboard_rescan_interval_seconds = _parse_positive_float(
+            section.get("rescan_interval_seconds"),
+            config.dashboard_rescan_interval_seconds,
+            minimum=1.0,
+        )
 
     if "network" in parser:
         section = parser["network"]
@@ -239,6 +246,7 @@ def load_config(config_path: str | None = None) -> AppConfig:
         catalog_url=config.catalog_url,
         dashboard_display_live_information=config.dashboard_display_live_information,
         dashboard_refresh_interval_seconds=config.dashboard_refresh_interval_seconds,
+        dashboard_rescan_interval_seconds=config.dashboard_rescan_interval_seconds,
         network_test_default_target=config.network_test_default_target,
         dns_test_default_target=config.dns_test_default_target,
         config_file_used=config.config_file_used,
@@ -276,6 +284,11 @@ display_live_information = {str(DEFAULT_DASHBOARD_LIVE_INFO).lower()}
 # Minimum 0.5; bumped to 5+ if you don't care about responsiveness and
 # want lower idle load.
 refresh_interval_seconds = {DEFAULT_DASHBOARD_REFRESH_INTERVAL_SECONDS}
+
+# How often (seconds) the dashboard re-reads the slower-changing facts:
+# hostname, interfaces and addresses, routes, mounted filesystems. The
+# screen only repaints what changed. Minimum 1.
+rescan_interval_seconds = {DEFAULT_DASHBOARD_RESCAN_INTERVAL_SECONDS}
 
 [network]
 # Default target prefilled into the Ping plugin's input box.
@@ -326,6 +339,7 @@ _SETTING_TO_INI: dict[str, tuple[str, str]] = {
     "log_level": ("general", "log_level"),
     "dashboard_display_live_information": ("dashboard", "display_live_information"),
     "dashboard_refresh_interval_seconds": ("dashboard", "refresh_interval_seconds"),
+    "dashboard_rescan_interval_seconds": ("dashboard", "rescan_interval_seconds"),
     "network_test_default_target": ("network", "test_default_target"),
     "dns_test_default_target": ("network", "dns_test_default_target"),
     "theme": ("theme", "name"),
