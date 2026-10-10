@@ -20,6 +20,8 @@ with `python3 tools/release_notes.py X.Y.Z`.
 
 ## [Unreleased]
 
+## [0.2.8] — 2026-10-10
+
 ### Added
 
 - **The dashboard follows the system.** Besides the CPU and memory bars, it now re-reads the
